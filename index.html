@@ -1,0 +1,137 @@
+<!doctype html>
+<html lang="ru">
+<head>
+  <meta charset="utf-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1">
+  <title>КЦ звонки - аналитика нагрузки</title>
+  <link rel="stylesheet" href="styles.css">
+  <script src="https://cdn.jsdelivr.net/npm/xlsx@0.18.5/dist/xlsx.full.min.js"></script>
+</head>
+<body>
+  <header class="topbar">
+    <div>
+      <h1>КЦ звонки</h1>
+      <p>Статистика операторов, сезонность и расчет нагрузки для графика</p>
+    </div>
+    <div class="status" id="libraryStatus">XLSX: проверка...</div>
+  </header>
+
+  <main class="layout">
+    <aside class="panel controls">
+      <section>
+        <h2>Файлы</h2>
+        <label class="drop">
+          <span>История внешних звонков</span>
+          <input id="mainFile" type="file" accept=".xlsx,.xls">
+        </label>
+        <label class="drop">
+          <span>Детализация СБИС</span>
+          <input id="sbisFile" type="file" accept=".xlsx,.xls">
+        </label>
+        <button id="analyzeBtn" class="primary">Посчитать</button>
+        <p class="hint">Данные обрабатываются только в браузере и никуда не отправляются.</p>
+      </section>
+
+      <section>
+        <h2>Сопоставление</h2>
+        <textarea id="operatorMap" spellcheck="false"></textarea>
+        <p class="hint">Формат: внутренний номер = ФИО. Можно добавлять варианты через запятую.</p>
+      </section>
+
+      <section>
+        <h2>Расчет смен</h2>
+        <label class="field">Целевая загрузка
+          <input id="occupancy" type="number" min="35" max="95" step="5" value="75">
+        </label>
+        <label class="field">Запас на перерывы и пики
+          <input id="buffer" type="number" min="0" max="80" step="5" value="20">
+        </label>
+        <label class="check">
+          <input id="replaceSbis" type="checkbox" checked>
+          <span>Заменять строки “Сбис” детализацией из второго файла</span>
+        </label>
+        <label class="check">
+          <input id="includeOutbound" type="checkbox">
+          <span>Учитывать исходящие в нагрузке смены</span>
+        </label>
+      </section>
+    </aside>
+
+    <section class="content">
+      <div id="notice" class="notice">Загрузите Excel-файлы и нажмите “Посчитать”.</div>
+
+      <section class="kpis" id="kpis"></section>
+
+      <section class="grid two">
+        <div class="panel">
+          <div class="section-head">
+            <h2>Нагрузка по часам</h2>
+            <select id="hourMetric">
+              <option value="calls">Звонки</option>
+              <option value="missed">Пропущенные</option>
+              <option value="load">Нагрузка</option>
+              <option value="operators">Операторы</option>
+            </select>
+          </div>
+          <canvas id="hourChart" height="240"></canvas>
+        </div>
+        <div class="panel">
+          <div class="section-head">
+            <h2>Дни недели</h2>
+          </div>
+          <canvas id="dowChart" height="240"></canvas>
+        </div>
+      </section>
+
+      <section class="grid two">
+        <div class="panel">
+          <div class="section-head">
+            <h2>Сезонность по месяцам</h2>
+          </div>
+          <canvas id="monthChart" height="260"></canvas>
+        </div>
+        <div class="panel">
+          <div class="section-head">
+            <h2>Рекомендация по сменам</h2>
+          </div>
+          <div id="staffing" class="staffing"></div>
+        </div>
+      </section>
+
+      <section class="panel">
+        <div class="section-head">
+          <h2>Операторы</h2>
+          <input id="operatorSearch" class="search" placeholder="Поиск по оператору">
+        </div>
+        <div class="table-wrap">
+          <table id="operatorTable">
+            <thead>
+              <tr>
+                <th>Оператор</th>
+                <th>Всего</th>
+                <th>Входящие</th>
+                <th>Исходящие</th>
+                <th>Пропущенные</th>
+                <th>% пропущ.</th>
+                <th>Разговор</th>
+                <th>Средн.</th>
+                <th>Часы</th>
+              </tr>
+            </thead>
+            <tbody></tbody>
+          </table>
+        </div>
+      </section>
+
+      <section class="panel">
+        <div class="section-head">
+          <h2>Тепловая карта: день и час</h2>
+        </div>
+        <div id="heatmap" class="heatmap"></div>
+      </section>
+    </section>
+  </main>
+
+  <script src="app.js"></script>
+</body>
+</html>
