@@ -189,6 +189,12 @@ function mergeSources(mainRows, sbisRows) {
     if (!/сбис/i.test(row.rawEmployee)) return true;
     return !isWithinDateRange(row.date, sbisRange);
   });
+  baseRows.forEach((row) => {
+    if (/сбис/i.test(row.rawEmployee)) {
+      row.employee = "СБИС без детализации";
+      row.serviceGroup = true;
+    }
+  });
   return baseRows.concat(sbisRows);
 }
 
@@ -242,11 +248,13 @@ async function buildStats(rows, mainRows, sbisRows) {
   let inbound = 0;
   let outbound = 0;
   let missed = 0;
+  let unresolvedSbis = 0;
   let totalTalk = 0;
   let totalWait = 0;
 
   rows.forEach((r) => {
     activeDates.add(isoDate(r.date));
+    if (r.serviceGroup || r.employee === "СБИС без детализации") unresolvedSbis++;
     if (r.direction === "in") inbound++;
     if (r.direction === "out") outbound++;
     if (r.missed) missed++;
@@ -277,6 +285,7 @@ async function buildStats(rows, mainRows, sbisRows) {
     inbound,
     outbound,
     missed,
+    unresolvedSbis,
     missedRate: rows.length ? missed / rows.length : 0,
     totalTalk,
     totalWait,
@@ -393,9 +402,10 @@ function groupOperators(rows) {
   const map = new Map();
   rows.forEach((r) => {
     if (!map.has(r.employee)) {
-      map.set(r.employee, { name: r.employee, total: 0, inbound: 0, outbound: 0, missed: 0, talkSec: 0, waitSec: 0, hours: new Set() });
+      map.set(r.employee, { name: r.employee, total: 0, inbound: 0, outbound: 0, missed: 0, talkSec: 0, waitSec: 0, hours: new Set(), serviceGroup: false });
     }
     const item = map.get(r.employee);
+    if (r.serviceGroup || r.employee === "СБИС без детализации") item.serviceGroup = true;
     item.total++;
     if (r.direction === "in") item.inbound++;
     if (r.direction === "out") item.outbound++;
@@ -409,7 +419,7 @@ function groupOperators(rows) {
     activeHours: item.hours.size,
     avgTalk: item.total ? item.talkSec / item.total : 0,
     missedRate: item.total ? item.missed / item.total : 0
-  })).sort((a, b) => b.total - a.total);
+  })).sort((a, b) => Number(a.serviceGroup) - Number(b.serviceGroup) || b.total - a.total);
 }
 
 function aggregateRange(size, keyFn, rows, includeConcurrency) {
@@ -563,7 +573,8 @@ function renderKpis(stats) {
     ["Входящие", formatNumber(stats.inbound), `${percent(stats.inbound / Math.max(stats.total, 1))} от всех`],
     ["Исходящие", formatNumber(stats.outbound), `${percent(stats.outbound / Math.max(stats.total, 1))} от всех`],
     ["Пропущенные", formatNumber(stats.missed), percent(stats.missedRate)],
-    ["Разговор", formatDuration(stats.totalTalk), `среднее ${formatDuration(stats.avgTalk)}`]
+    ["Разговор", formatDuration(stats.totalTalk), `среднее ${formatDuration(stats.avgTalk)}`],
+    ["СБИС без детализации", formatNumber(stats.unresolvedSbis), `${percent(stats.unresolvedSbis / Math.max(stats.total, 1))} строк`]
   ];
   els.kpis.innerHTML = cards.map(([label, value, sub]) => `<div class="panel kpi"><span>${label}</span><strong>${value}</strong><small>${sub}</small></div>`).join("");
 }
