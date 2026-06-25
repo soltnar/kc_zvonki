@@ -153,17 +153,41 @@ textarea {
 }
 
 .notice {
+  position: relative;
   border: 1px solid #bfd7ff;
   background: #eff6ff;
   color: #1d4ed8;
   border-radius: 8px;
-  padding: 12px 14px;
+  padding: 12px 14px 12px 42px;
 }
 
 .notice.warn {
   border-color: #fed7aa;
   background: #fff7ed;
   color: #9a3412;
+}
+
+.notice::before {
+  content: "";
+  position: absolute;
+  left: 15px;
+  top: 50%;
+  width: 14px;
+  height: 14px;
+  margin-top: -7px;
+  border-radius: 999px;
+  border: 2px solid currentColor;
+  opacity: .35;
+}
+
+.notice.busy::before {
+  border-right-color: transparent;
+  opacity: 1;
+  animation: spin .8s linear infinite;
+}
+
+@keyframes spin {
+  to { transform: rotate(360deg); }
 }
 
 .kpis {

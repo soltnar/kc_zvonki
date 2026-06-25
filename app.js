@@ -55,13 +55,18 @@ async function analyze() {
 
   try {
     els.analyzeBtn.disabled = true;
-    setNotice("Читаю Excel и собираю статистику...");
+    setNotice("Готовлю разбор файлов...");
+    await nextPaint();
     const mapping = parseMapping(els.operatorMap.value);
     const mainRows = await parseMainWorkbook(els.mainFile.files[0], mapping);
     const sbisRows = els.sbisFile.files[0] ? await parseSbisWorkbook(els.sbisFile.files[0]) : [];
+    setNotice("Объединяю телефонии и считаю сводки...");
+    await nextPaint();
     const rows = mergeSources(mainRows, sbisRows);
-    const stats = buildStats(rows, mainRows, sbisRows);
+    const stats = await buildStats(rows, mainRows, sbisRows);
     lastStats = stats;
+    setNotice("Рисую графики...");
+    await nextPaint();
     render(stats);
   } catch (error) {
     console.error(error);
@@ -84,25 +89,37 @@ function parseMapping(text) {
   return byNumber;
 }
 
+function columnIndex(headers) {
+  return Object.fromEntries(headers.map((header, index) => [header, index]));
+}
+
 async function readWorkbook(file) {
+  setNotice(`Открываю файл “${file.name}” (${formatFileSize(file.size)})...`);
+  await nextPaint();
   const buffer = await file.arrayBuffer();
-  return XLSX.read(buffer, { type: "array", cellDates: true, dense: false });
+  setNotice(`Разбираю структуру Excel “${file.name}”. Для больших файлов это может занять минуту...`);
+  await nextPaint();
+  return XLSX.read(buffer, { type: "array", cellDates: true, dense: true });
 }
 
 async function parseMainWorkbook(file, mapping) {
   const workbook = await readWorkbook(file);
   const sheet = workbook.Sheets[workbook.SheetNames[0]];
-  const raw = XLSX.utils.sheet_to_json(sheet, { header: 1, raw: true, defval: "" });
+  setNotice("Читаю строки основной телефонии...");
+  await nextPaint();
+  const raw = XLSX.utils.sheet_to_json(sheet, { header: 1, raw: true, defval: "", blankrows: false });
   const headerIndex = raw.findIndex((row) => row.includes("Тип звонка") && row.includes("Сотрудник"));
   if (headerIndex < 0) throw new Error("В основном файле не найдена строка заголовков.");
   const headers = raw[headerIndex].map(String);
-  return raw.slice(headerIndex + 1).map((row) => {
-    const rec = Object.fromEntries(headers.map((h, i) => [h, row[i] ?? ""]));
-    const date = parseMainDate(rec["Дата"], rec["Время"]);
-    if (!date) return null;
-    const type = String(rec["Тип звонка"] || "").toLowerCase();
-    const rawEmployee = String(rec["Сотрудник"] || "").trim() || "Без оператора";
-    return {
+  const idx = columnIndex(headers);
+  const rows = [];
+  for (let i = headerIndex + 1; i < raw.length; i++) {
+    const row = raw[i];
+    const date = parseMainDate(row[idx["Дата"]], row[idx["Время"]]);
+    if (!date) continue;
+    const type = String(row[idx["Тип звонка"]] || "").toLowerCase();
+    const rawEmployee = String(row[idx["Сотрудник"]] || "").trim() || "Без оператора";
+    rows.push({
       source: "Основная телефония",
       date,
       type,
@@ -110,39 +127,53 @@ async function parseMainWorkbook(file, mapping) {
       missed: type.includes("пропущ") || type.includes("неуспеш"),
       employee: normalizeMainEmployee(rawEmployee, mapping),
       rawEmployee,
-      client: String(rec["Клиент"] || ""),
-      waitSec: parseDuration(rec["Ожидание"]),
-      talkSec: parseDuration(rec["Длительность"])
-    };
-  }).filter(Boolean);
+      client: String(row[idx["Клиент"]] || ""),
+      waitSec: parseDuration(row[idx["Ожидание"]]),
+      talkSec: parseDuration(row[idx["Длительность"]])
+    });
+    if (i % 5000 === 0) {
+      setNotice(`Основная телефония: обработано ${formatNumber(i - headerIndex)} из ${formatNumber(raw.length - headerIndex - 1)} строк...`);
+      await nextFrame();
+    }
+  }
+  return rows;
 }
 
 async function parseSbisWorkbook(file) {
   const workbook = await readWorkbook(file);
   const sheet = workbook.Sheets[workbook.SheetNames[0]];
-  const raw = XLSX.utils.sheet_to_json(sheet, { header: 1, raw: true, defval: "" });
+  setNotice("Читаю строки СБИС...");
+  await nextPaint();
+  const raw = XLSX.utils.sheet_to_json(sheet, { header: 1, raw: true, defval: "", blankrows: false });
   const headerIndex = raw.findIndex((row) => row.includes("Начало звонка") && row.includes("Сотрудник"));
   if (headerIndex < 0) throw new Error("В файле СБИС не найдена строка заголовков.");
   const headers = raw[headerIndex].map(String);
-  return raw.slice(headerIndex + 1).map((row) => {
-    const rec = Object.fromEntries(headers.map((h, i) => [h, row[i] ?? ""]));
-    const date = parseDateTime(rec["Начало звонка"]);
-    if (!date) return null;
-    const result = String(rec["Результат звонка"] || "").toLowerCase();
-    const directionText = String(rec["Направление звонка"] || "").toLowerCase();
-    return {
+  const idx = columnIndex(headers);
+  const rows = [];
+  for (let i = headerIndex + 1; i < raw.length; i++) {
+    const row = raw[i];
+    const date = parseDateTime(row[idx["Начало звонка"]]);
+    if (!date) continue;
+    const result = String(row[idx["Результат звонка"]] || "").toLowerCase();
+    const directionText = String(row[idx["Направление звонка"]] || "").toLowerCase();
+    rows.push({
       source: "СБИС",
       date,
       type: `${directionText} ${result}`.trim(),
       direction: directionText.includes("исход") ? "out" : "in",
       missed: /не отвечен|не дождался|занято|вышло время/.test(result),
-      employee: shortName(String(rec["Сотрудник"] || "СБИС без оператора")),
-      rawEmployee: String(rec["Сотрудник"] || ""),
+      employee: shortName(String(row[idx["Сотрудник"]] || "СБИС без оператора")),
+      rawEmployee: String(row[idx["Сотрудник"]] || ""),
       client: "",
       waitSec: 0,
-      talkSec: parseDuration(rec["Время разговора"])
-    };
-  }).filter(Boolean);
+      talkSec: parseDuration(row[idx["Время разговора"]])
+    });
+    if (i % 5000 === 0) {
+      setNotice(`СБИС: обработано ${formatNumber(i - headerIndex)} из ${formatNumber(raw.length - headerIndex - 1)} строк...`);
+      await nextFrame();
+    }
+  }
+  return rows;
 }
 
 function mergeSources(mainRows, sbisRows) {
@@ -195,14 +226,30 @@ function parseDuration(value) {
   return +(m[1] || 0) * 3600 + +m[2] * 60 + +m[3];
 }
 
-function buildStats(rows, mainRows, sbisRows) {
-  const activeDays = new Set(rows.map((r) => isoDate(r.date))).size || 1;
-  const inboundRows = rows.filter((r) => r.direction === "in");
-  const workloadRows = rows.filter((r) => r.direction === "in" || els.includeOutbound.checked);
-  const totalTalk = rows.reduce((sum, r) => sum + r.talkSec, 0);
-  const totalWait = rows.reduce((sum, r) => sum + r.waitSec, 0);
-  const missed = rows.filter((r) => r.missed).length;
+async function buildStats(rows, mainRows, sbisRows) {
+  const activeDates = new Set();
+  const workloadRows = [];
+  let inbound = 0;
+  let outbound = 0;
+  let missed = 0;
+  let totalTalk = 0;
+  let totalWait = 0;
+
+  rows.forEach((r) => {
+    activeDates.add(isoDate(r.date));
+    if (r.direction === "in") inbound++;
+    if (r.direction === "out") outbound++;
+    if (r.missed) missed++;
+    totalTalk += r.talkSec;
+    totalWait += r.waitSec;
+    if (r.direction === "in" || els.includeOutbound.checked) workloadRows.push(r);
+  });
+
+  setNotice("Считаю операторов, часы, дни недели и сезонность...");
+  await nextPaint();
+  const activeDays = activeDates.size || 1;
   const operators = groupOperators(rows);
+  await nextFrame();
   const hour = aggregateRange(24, (r) => r.date.getHours(), workloadRows);
   const dow = aggregateRange(7, (r) => (r.date.getDay() + 6) % 7, rows);
   const month = aggregateRange(12, (r) => r.date.getMonth(), rows);
@@ -216,8 +263,8 @@ function buildStats(rows, mainRows, sbisRows) {
     sbisRows,
     activeDays,
     total: rows.length,
-    inbound: inboundRows.length,
-    outbound: rows.filter((r) => r.direction === "out").length,
+    inbound,
+    outbound,
     missed,
     missedRate: rows.length ? missed / rows.length : 0,
     totalTalk,
@@ -405,6 +452,15 @@ function renderBarChart(canvas, data, labels, metric) {
 function setNotice(text, warn = false) {
   els.notice.textContent = text;
   els.notice.classList.toggle("warn", warn);
+  els.notice.classList.toggle("busy", text.includes("..."));
+}
+
+function nextPaint() {
+  return new Promise((resolve) => requestAnimationFrame(() => setTimeout(resolve, 0)));
+}
+
+function nextFrame() {
+  return new Promise((resolve) => setTimeout(resolve, 0));
 }
 
 function dateRange(rows) {
@@ -429,6 +485,12 @@ function formatDate(date) {
 
 function formatNumber(value) {
   return Math.round(value).toLocaleString("ru-RU");
+}
+
+function formatFileSize(bytes) {
+  if (bytes >= 1024 * 1024) return `${(bytes / 1024 / 1024).toFixed(1).replace(".", ",")} МБ`;
+  if (bytes >= 1024) return `${Math.round(bytes / 1024)} КБ`;
+  return `${bytes} Б`;
 }
 
 function formatCompact(value) {
