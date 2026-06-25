@@ -40,8 +40,17 @@
 
       <section>
         <h2>Расчет смен</h2>
+        <label class="field">Начало КЦ
+          <input id="workStart" type="time" value="09:30">
+        </label>
+        <label class="field">Конец КЦ
+          <input id="workEnd" type="time" value="23:00">
+        </label>
         <label class="field">Целевая загрузка
           <input id="occupancy" type="number" min="35" max="95" step="5" value="75">
+        </label>
+        <label class="field">Макс. ожидание, сек
+          <input id="maxWait" type="number" min="15" max="600" step="15" value="120">
         </label>
         <label class="field">Запас на перерывы и пики
           <input id="buffer" type="number" min="0" max="80" step="5" value="20">
@@ -70,6 +79,7 @@
               <option value="calls">Звонки</option>
               <option value="missed">Пропущенные</option>
               <option value="load">Нагрузка</option>
+              <option value="concurrent">Одновременно</option>
               <option value="operators">Операторы</option>
             </select>
           </div>

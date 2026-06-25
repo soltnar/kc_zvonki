@@ -272,11 +272,20 @@ th {
 
 .staff-row {
   display: grid;
-  grid-template-columns: 64px 1fr 92px;
+  grid-template-columns: 64px minmax(0, 1fr) 92px;
   align-items: center;
   gap: 10px;
   padding: 8px 0;
   border-top: 1px solid var(--line);
+}
+
+.staff-meta {
+  display: block;
+  margin-top: 5px;
+  color: var(--muted);
+  font-size: 12px;
+  line-height: 1.25;
+  white-space: normal;
 }
 
 .bar {

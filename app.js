@@ -20,7 +20,10 @@ const els = {
   sbisFile: document.getElementById("sbisFile"),
   analyzeBtn: document.getElementById("analyzeBtn"),
   operatorMap: document.getElementById("operatorMap"),
+  workStart: document.getElementById("workStart"),
+  workEnd: document.getElementById("workEnd"),
   occupancy: document.getElementById("occupancy"),
+  maxWait: document.getElementById("maxWait"),
   buffer: document.getElementById("buffer"),
   replaceSbis: document.getElementById("replaceSbis"),
   includeOutbound: document.getElementById("includeOutbound"),
@@ -43,7 +46,7 @@ els.analyzeBtn.disabled = !window.XLSX;
 els.analyzeBtn.addEventListener("click", analyze);
 els.hourMetric.addEventListener("change", () => lastStats && render(lastStats));
 els.operatorSearch.addEventListener("input", () => lastStats && renderOperators(lastStats.operatorRows));
-[els.occupancy, els.buffer, els.replaceSbis, els.includeOutbound].forEach((el) => {
+[els.workStart, els.workEnd, els.occupancy, els.maxWait, els.buffer, els.replaceSbis, els.includeOutbound].forEach((el) => {
   el.addEventListener("change", () => lastStats && analyze());
 });
 
@@ -247,7 +250,7 @@ async function buildStats(rows, mainRows, sbisRows) {
     if (r.missed) missed++;
     totalTalk += r.talkSec;
     totalWait += r.waitSec;
-    if (r.direction === "in" || els.includeOutbound.checked) workloadRows.push(r);
+    if ((r.direction === "in" || els.includeOutbound.checked) && isWithinWorkHours(r.date)) workloadRows.push(r);
   });
 
   setNotice("Считаю операторов, часы, дни недели и сезонность...");
@@ -255,9 +258,9 @@ async function buildStats(rows, mainRows, sbisRows) {
   const activeDays = activeDates.size || 1;
   const operators = groupOperators(rows);
   await nextFrame();
-  const hour = aggregateRange(24, (r) => r.date.getHours(), workloadRows);
-  const dow = aggregateRange(7, (r) => (r.date.getDay() + 6) % 7, rows);
-  const month = aggregateRange(12, (r) => r.date.getMonth(), rows);
+  const hour = aggregateRange(24, (r) => r.date.getHours(), workloadRows, true);
+  const dow = aggregateRange(7, (r) => (r.date.getDay() + 6) % 7, rows, false);
+  const month = aggregateRange(12, (r) => r.date.getMonth(), rows, false);
   const heat = Array.from({ length: 7 }, () => Array.from({ length: 24 }, () => 0));
   rows.forEach((r) => { heat[(r.date.getDay() + 6) % 7][r.date.getHours()]++; });
   const range = dateRange(rows);
@@ -311,7 +314,7 @@ function groupOperators(rows) {
   })).sort((a, b) => b.total - a.total);
 }
 
-function aggregateRange(size, keyFn, rows) {
+function aggregateRange(size, keyFn, rows, includeConcurrency) {
   const arr = Array.from({ length: size }, () => ({ calls: 0, missed: 0, talkSec: 0, waitSec: 0, dates: new Set() }));
   rows.forEach((r) => {
     const item = arr[keyFn(r)];
@@ -321,21 +324,111 @@ function aggregateRange(size, keyFn, rows) {
     item.waitSec += r.waitSec;
     item.dates.add(isoDate(r.date));
   });
+  const concurrency = includeConcurrency ? calculateHourlyConcurrency(rows, size, keyFn) : Array.from({ length: size }, () => ({ peak: 0, avgPeak: 0 }));
   const occupancy = clamp(+els.occupancy.value || 75, 35, 95) / 100;
   const buffer = 1 + clamp(+els.buffer.value || 0, 0, 80) / 100;
+  const maxWaitSec = clamp(+els.maxWait.value || 120, 15, 600);
   return arr.map((item, index) => {
     const days = item.dates.size || 1;
     const avgCalls = item.calls / days;
-    const loadSec = (item.talkSec + item.waitSec) / days;
+    const avgTalkSec = item.calls ? item.talkSec / item.calls : 0;
+    const avgWaitSec = item.calls ? item.waitSec / item.calls : 0;
+    const loadSec = item.talkSec / days;
+    const staffing = calculateStaffing(avgCalls, avgTalkSec, occupancy, buffer, maxWaitSec);
     return {
       index,
       calls: item.calls,
       missed: item.missed,
       avgCalls,
+      avgTalkSec,
+      avgWaitSec,
       loadHours: loadSec / 3600,
-      operators: Math.max(1, Math.ceil((loadSec / 3600) / occupancy * buffer))
+      concurrent: concurrency[index].peak,
+      avgConcurrent: concurrency[index].avgPeak,
+      serviceLevel: staffing.serviceLevel,
+      expectedWaitSec: staffing.expectedWaitSec,
+      traffic: staffing.traffic,
+      operators: Math.max(staffing.operators, Math.ceil(concurrency[index].avgPeak))
     };
   });
+}
+
+function calculateHourlyConcurrency(rows, size, keyFn) {
+  const buckets = Array.from({ length: size }, () => new Map());
+  rows.forEach((r) => {
+    const durationSec = Math.max(1, r.waitSec + r.talkSec);
+    const startMs = r.date.getTime();
+    const endMs = startMs + durationSec * 1000;
+    let cursor = startOfHour(r.date);
+    while (cursor.getTime() <= endMs) {
+      const nextHour = new Date(cursor.getTime() + 3600000);
+      const segStart = Math.max(startMs, cursor.getTime());
+      const segEnd = Math.min(endMs, nextHour.getTime());
+      if (segEnd > segStart) {
+        const hour = keyFn({ ...r, date: cursor });
+        const key = `${isoDate(cursor)} ${cursor.getHours()}`;
+        if (!buckets[hour].has(key)) buckets[hour].set(key, []);
+        buckets[hour].get(key).push([segStart - cursor.getTime(), 1], [segEnd - cursor.getTime(), -1]);
+      }
+      cursor = nextHour;
+    }
+  });
+  return buckets.map((slotMap) => {
+    let peak = 0;
+    let peakSum = 0;
+    slotMap.forEach((events) => {
+      events.sort((a, b) => a[0] - b[0] || a[1] - b[1]);
+      let active = 0;
+      let slotPeak = 0;
+      events.forEach((event) => {
+        active += event[1];
+        if (active > slotPeak) slotPeak = active;
+      });
+      peak = Math.max(peak, slotPeak);
+      peakSum += slotPeak;
+    });
+    return { peak, avgPeak: slotMap.size ? peakSum / slotMap.size : 0 };
+  });
+}
+
+function calculateStaffing(avgCalls, avgTalkSec, occupancy, buffer, maxWaitSec) {
+  if (!avgCalls || !avgTalkSec) {
+    return { operators: 0, traffic: 0, expectedWaitSec: 0, serviceLevel: 1 };
+  }
+  const traffic = avgCalls * avgTalkSec / 3600;
+  let agents = Math.max(1, Math.ceil(traffic / occupancy), Math.floor(traffic) + 1);
+  let result = erlangResult(traffic, avgTalkSec, agents, maxWaitSec);
+  while ((result.expectedWaitSec > maxWaitSec || agents <= traffic) && agents < 200) {
+    agents++;
+    result = erlangResult(traffic, avgTalkSec, agents, maxWaitSec);
+  }
+  return {
+    operators: Math.ceil(agents * buffer),
+    traffic,
+    expectedWaitSec: result.expectedWaitSec,
+    serviceLevel: result.serviceLevel
+  };
+}
+
+function erlangResult(traffic, avgTalkSec, agents, maxWaitSec) {
+  if (traffic <= 0 || agents <= 0) return { expectedWaitSec: 0, serviceLevel: 1 };
+  if (agents <= traffic) return { expectedWaitSec: Infinity, serviceLevel: 0 };
+  const waitProbability = erlangC(traffic, agents);
+  const expectedWaitSec = waitProbability * avgTalkSec / (agents - traffic);
+  const serviceLevel = 1 - waitProbability * Math.exp(-(agents - traffic) * maxWaitSec / avgTalkSec);
+  return { expectedWaitSec, serviceLevel: clamp(serviceLevel, 0, 1) };
+}
+
+function erlangC(traffic, agents) {
+  let term = 1;
+  let sum = 1;
+  for (let n = 1; n < agents; n++) {
+    term *= traffic / n;
+    sum += term;
+  }
+  const last = term * traffic / agents;
+  const queueTerm = last * agents / (agents - traffic);
+  return queueTerm / (sum + queueTerm);
 }
 
 function render(stats) {
@@ -350,7 +443,7 @@ function render(stats) {
 }
 
 function renderNotice(stats) {
-  const parts = [`Период анализа: ${formatDate(stats.range.min)} - ${formatDate(stats.range.max)}. Строк: ${formatNumber(stats.total)}.`];
+  const parts = [`Период анализа: ${formatDate(stats.range.min)} - ${formatDate(stats.range.max)}. Строк: ${formatNumber(stats.total)}. Расчет смен: ${els.workStart.value} - ${els.workEnd.value}.`];
   if (stats.sbisRows.length) {
     if (els.replaceSbis.checked) {
       parts.push(`СБИС расшифровывает операторов за ${formatDate(stats.sourceRanges.sbis.min)} - ${formatDate(stats.sourceRanges.sbis.max)}; остальной период остается из основной телефонии.`);
@@ -395,7 +488,10 @@ function renderStaffing(hourRows) {
   els.staffing.innerHTML = hourRows.map((r) => `
     <div class="staff-row">
       <b>${String(r.index).padStart(2, "0")}:00</b>
-      <div class="bar" title="${r.avgCalls.toFixed(1)} звонков в активный день"><i style="width:${r.operators / max * 100}%"></i></div>
+      <div>
+        <div class="bar" title="${r.avgCalls.toFixed(1)} звонков/день, средний разговор ${formatDuration(r.avgTalkSec)}, пик одновременно ${r.concurrent}"><i style="width:${r.operators / max * 100}%"></i></div>
+        <small class="staff-meta">${r.avgCalls.toFixed(1)} зв./день · пик ${r.concurrent} · ожид. ${formatDuration(r.expectedWaitSec)}</small>
+      </div>
       <span>${r.operators} опер.</span>
     </div>
   `).join("");
@@ -485,6 +581,23 @@ function startOfDay(date) {
   return new Date(date.getFullYear(), date.getMonth(), date.getDate());
 }
 
+function startOfHour(date) {
+  return new Date(date.getFullYear(), date.getMonth(), date.getDate(), date.getHours());
+}
+
+function isWithinWorkHours(date) {
+  const start = parseClock(els.workStart.value || "09:30");
+  const end = parseClock(els.workEnd.value || "23:00");
+  const minute = date.getHours() * 60 + date.getMinutes();
+  if (start <= end) return minute >= start && minute < end;
+  return minute >= start || minute < end;
+}
+
+function parseClock(value) {
+  const [h, m] = String(value || "00:00").split(":").map(Number);
+  return (h || 0) * 60 + (m || 0);
+}
+
 function hourLabels() {
   return Array.from({ length: 24 }, (_, i) => String(i).padStart(2, "0"));
 }
@@ -518,6 +631,7 @@ function percent(value) {
 }
 
 function formatDuration(seconds) {
+  if (!Number.isFinite(seconds)) return ">10м";
   seconds = Math.round(seconds || 0);
   const h = Math.floor(seconds / 3600);
   const m = Math.floor(seconds % 3600 / 60);
