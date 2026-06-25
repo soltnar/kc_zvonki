@@ -179,7 +179,12 @@ async function parseSbisWorkbook(file) {
 function mergeSources(mainRows, sbisRows) {
   if (!sbisRows.length) return mainRows;
   if (!els.replaceSbis.checked) return mainRows.concat(sbisRows);
-  return mainRows.filter((row) => !/сбис/i.test(row.rawEmployee)).concat(sbisRows);
+  const sbisRange = dateRange(sbisRows);
+  const baseRows = mainRows.filter((row) => {
+    if (!/сбис/i.test(row.rawEmployee)) return true;
+    return !isWithinDateRange(row.date, sbisRange);
+  });
+  return baseRows.concat(sbisRows);
 }
 
 function normalizeMainEmployee(value, mapping) {
@@ -347,14 +352,13 @@ function render(stats) {
 function renderNotice(stats) {
   const parts = [`Период анализа: ${formatDate(stats.range.min)} - ${formatDate(stats.range.max)}. Строк: ${formatNumber(stats.total)}.`];
   if (stats.sbisRows.length) {
-    parts.push(`СБИС: ${formatDate(stats.sourceRanges.sbis.min)} - ${formatDate(stats.sourceRanges.sbis.max)}.`);
+    if (els.replaceSbis.checked) {
+      parts.push(`СБИС расшифровывает операторов за ${formatDate(stats.sourceRanges.sbis.min)} - ${formatDate(stats.sourceRanges.sbis.max)}; остальной период остается из основной телефонии.`);
+    } else {
+      parts.push(`СБИС добавлен отдельным источником за ${formatDate(stats.sourceRanges.sbis.min)} - ${formatDate(stats.sourceRanges.sbis.max)}.`);
+    }
   }
-  if (stats.sbisRows.length && els.replaceSbis.checked && stats.sourceRanges.sbis.min > stats.sourceRanges.main.min) {
-    parts.push("Внимание: детализация СБИС покрывает не весь период основного файла.");
-    setNotice(parts.join(" "), true);
-  } else {
-    setNotice(parts.join(" "));
-  }
+  setNotice(parts.join(" "));
 }
 
 function renderKpis(stats) {
@@ -469,6 +473,16 @@ function dateRange(rows) {
     min: !acc.min || r.date < acc.min ? r.date : acc.min,
     max: !acc.max || r.date > acc.max ? r.date : acc.max
   }), { min: null, max: null });
+}
+
+function isWithinDateRange(date, range) {
+  if (!range.min || !range.max) return false;
+  const day = startOfDay(date).getTime();
+  return day >= startOfDay(range.min).getTime() && day <= startOfDay(range.max).getTime();
+}
+
+function startOfDay(date) {
+  return new Date(date.getFullYear(), date.getMonth(), date.getDate());
 }
 
 function hourLabels() {
