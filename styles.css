@@ -223,6 +223,7 @@ textarea {
   display: grid;
   grid-template-columns: repeat(2, minmax(0, 1fr));
   gap: 18px;
+  align-items: start;
 }
 
 .section-head {
@@ -268,6 +269,57 @@ th {
 
 .staffing {
   padding: 0 14px 14px;
+  overflow: auto;
+  max-height: 560px;
+}
+
+.staff-grid {
+  display: grid;
+  grid-template-columns: 72px repeat(7, minmax(72px, 1fr));
+  gap: 2px;
+  min-width: 680px;
+}
+
+.staff-cell {
+  min-height: 42px;
+  border-radius: 4px;
+  padding: 7px 8px;
+  background: #f8fafc;
+}
+
+.staff-head {
+  position: sticky;
+  top: 0;
+  z-index: 1;
+  min-height: 32px;
+  color: var(--muted);
+  font-weight: 800;
+  background: #eef2f7;
+}
+
+.staff-time {
+  color: var(--ink);
+  font-weight: 800;
+}
+
+.staff-plan {
+  background:
+    linear-gradient(90deg, rgba(15,143,97,.18), rgba(217,119,6,.22), rgba(194,65,12,.24)) 0 0 / calc(var(--level) * 100%) 100% no-repeat,
+    #f1f5f9;
+}
+
+.staff-plan strong {
+  display: block;
+  font-size: 20px;
+  line-height: 1;
+}
+
+.staff-plan span {
+  display: block;
+  margin-top: 4px;
+  color: var(--muted);
+  font-size: 11px;
+  line-height: 1.15;
 }
 
 .staff-row {

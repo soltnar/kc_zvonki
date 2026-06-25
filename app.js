@@ -33,6 +33,7 @@ const els = {
   hourChart: document.getElementById("hourChart"),
   dowChart: document.getElementById("dowChart"),
   monthChart: document.getElementById("monthChart"),
+  staffingMonth: document.getElementById("staffingMonth"),
   staffing: document.getElementById("staffing"),
   operatorSearch: document.getElementById("operatorSearch"),
   operatorTable: document.querySelector("#operatorTable tbody"),
@@ -45,6 +46,7 @@ els.analyzeBtn.disabled = !window.XLSX;
 
 els.analyzeBtn.addEventListener("click", analyze);
 els.hourMetric.addEventListener("change", () => lastStats && render(lastStats));
+els.staffingMonth.addEventListener("change", () => lastStats && renderStaffing(lastStats));
 els.operatorSearch.addEventListener("input", () => lastStats && renderOperators(lastStats.operatorRows));
 [els.workStart, els.workEnd, els.occupancy, els.maxWait, els.buffer, els.replaceSbis, els.includeOutbound].forEach((el) => {
   el.addEventListener("change", () => lastStats && analyze());
@@ -261,6 +263,7 @@ async function buildStats(rows, mainRows, sbisRows) {
   const hour = aggregateRange(24, (r) => r.date.getHours(), workloadRows, true);
   const dow = aggregateRange(7, (r) => (r.date.getDay() + 6) % 7, rows, false);
   const month = aggregateRange(12, (r) => r.date.getMonth(), rows, false);
+  const staffing = buildStaffingRecommendations(workloadRows);
   const heat = Array.from({ length: 7 }, () => Array.from({ length: 24 }, () => 0));
   rows.forEach((r) => { heat[(r.date.getDay() + 6) % 7][r.date.getHours()]++; });
   const range = dateRange(rows);
@@ -282,6 +285,7 @@ async function buildStats(rows, mainRows, sbisRows) {
     hour,
     dow,
     month,
+    staffing,
     heat,
     range,
     sourceRanges: {
@@ -289,6 +293,100 @@ async function buildStats(rows, mainRows, sbisRows) {
       sbis: dateRange(sbisRows)
     }
   };
+}
+
+function buildStaffingRecommendations(rows) {
+  const cells = Array.from({ length: 12 }, () => Array.from({ length: 7 }, () => Array.from({ length: 24 }, () => emptyStaffCell())));
+  rows.forEach((r) => {
+    const month = r.date.getMonth();
+    const dow = (r.date.getDay() + 6) % 7;
+    const hour = r.date.getHours();
+    const item = cells[month][dow][hour];
+    item.calls++;
+    if (r.missed) item.missed++;
+    item.talkSec += r.talkSec;
+    item.waitSec += r.waitSec;
+    item.dates.add(isoDate(r.date));
+  });
+
+  const concurrency = calculateSeasonalConcurrency(rows);
+  const availableMonths = [];
+  const monthTotals = Array.from({ length: 12 }, () => 0);
+  const occupancy = clamp(+els.occupancy.value || 75, 35, 95) / 100;
+  const buffer = 1 + clamp(+els.buffer.value || 0, 0, 80) / 100;
+  const maxWaitSec = clamp(+els.maxWait.value || 120, 15, 600);
+
+  const byMonth = cells.map((monthCells, month) => {
+    const table = monthCells.map((dowCells, dow) => dowCells.map((item, hour) => {
+      monthTotals[month] += item.calls;
+      const days = item.dates.size || 0;
+      const avgCalls = days ? item.calls / days : 0;
+      const avgTalkSec = item.calls ? item.talkSec / item.calls : 0;
+      const staffing = calculateStaffing(avgCalls, avgTalkSec, occupancy, buffer, maxWaitSec);
+      const peak = concurrency[month][dow][hour].peak;
+      const avgPeak = concurrency[month][dow][hour].avgPeak;
+      return {
+        hour,
+        dow,
+        calls: item.calls,
+        avgCalls,
+        avgTalkSec,
+        avgWaitSec: item.calls ? item.waitSec / item.calls : 0,
+        missed: item.missed,
+        peak,
+        avgPeak,
+        expectedWaitSec: staffing.expectedWaitSec,
+        operators: Math.max(staffing.operators, Math.ceil(avgPeak))
+      };
+    }));
+    if (monthTotals[month] > 0) availableMonths.push(month);
+    return table;
+  });
+
+  const peak = Array.from({ length: 7 }, (_, dow) => Array.from({ length: 24 }, (_, hour) => {
+    return availableMonths.reduce((best, month) => {
+      const current = byMonth[month][dow][hour];
+      if (!best || current.operators > best.operators || (current.operators === best.operators && current.avgCalls > best.avgCalls)) {
+        return { ...current, month };
+      }
+      return best;
+    }, null) || { ...emptyStaffResult(hour, dow), month: null };
+  }));
+
+  return { byMonth, peak, availableMonths, monthTotals, slots: getWorkHourSlots() };
+}
+
+function emptyStaffCell() {
+  return { calls: 0, missed: 0, talkSec: 0, waitSec: 0, dates: new Set() };
+}
+
+function emptyStaffResult(hour, dow) {
+  return { hour, dow, calls: 0, avgCalls: 0, avgTalkSec: 0, avgWaitSec: 0, missed: 0, peak: 0, avgPeak: 0, expectedWaitSec: 0, operators: 0 };
+}
+
+function calculateSeasonalConcurrency(rows) {
+  const buckets = Array.from({ length: 12 }, () => Array.from({ length: 7 }, () => Array.from({ length: 24 }, () => new Map())));
+  rows.forEach((r) => {
+    const durationSec = Math.max(1, r.waitSec + r.talkSec);
+    const startMs = r.date.getTime();
+    const endMs = startMs + durationSec * 1000;
+    let cursor = startOfHour(r.date);
+    while (cursor.getTime() <= endMs) {
+      const nextHour = new Date(cursor.getTime() + 3600000);
+      const segStart = Math.max(startMs, cursor.getTime());
+      const segEnd = Math.min(endMs, nextHour.getTime());
+      if (segEnd > segStart) {
+        const month = cursor.getMonth();
+        const dow = (cursor.getDay() + 6) % 7;
+        const hour = cursor.getHours();
+        const key = `${isoDate(cursor)} ${hour}`;
+        if (!buckets[month][dow][hour].has(key)) buckets[month][dow][hour].set(key, []);
+        buckets[month][dow][hour].get(key).push([segStart - cursor.getTime(), 1], [segEnd - cursor.getTime(), -1]);
+      }
+      cursor = nextHour;
+    }
+  });
+  return buckets.map((month) => month.map((dow) => dow.map(concurrencyFromSlotMap)));
 }
 
 function groupOperators(rows) {
@@ -374,21 +472,25 @@ function calculateHourlyConcurrency(rows, size, keyFn) {
     }
   });
   return buckets.map((slotMap) => {
-    let peak = 0;
-    let peakSum = 0;
-    slotMap.forEach((events) => {
-      events.sort((a, b) => a[0] - b[0] || a[1] - b[1]);
-      let active = 0;
-      let slotPeak = 0;
-      events.forEach((event) => {
-        active += event[1];
-        if (active > slotPeak) slotPeak = active;
-      });
-      peak = Math.max(peak, slotPeak);
-      peakSum += slotPeak;
-    });
-    return { peak, avgPeak: slotMap.size ? peakSum / slotMap.size : 0 };
+    return concurrencyFromSlotMap(slotMap);
   });
+}
+
+function concurrencyFromSlotMap(slotMap) {
+  let peak = 0;
+  let peakSum = 0;
+  slotMap.forEach((events) => {
+    events.sort((a, b) => a[0] - b[0] || a[1] - b[1]);
+    let active = 0;
+    let slotPeak = 0;
+    events.forEach((event) => {
+      active += event[1];
+      if (active > slotPeak) slotPeak = active;
+    });
+    peak = Math.max(peak, slotPeak);
+    peakSum += slotPeak;
+  });
+  return { peak, avgPeak: slotMap.size ? peakSum / slotMap.size : 0 };
 }
 
 function calculateStaffing(avgCalls, avgTalkSec, occupancy, buffer, maxWaitSec) {
@@ -437,7 +539,8 @@ function render(stats) {
   renderBarChart(els.hourChart, stats.hour, hourLabels(), els.hourMetric.value);
   renderBarChart(els.dowChart, stats.dow, DOW, "calls");
   renderBarChart(els.monthChart, stats.month, MONTHS, "calls");
-  renderStaffing(stats.hour);
+  renderStaffingMonthOptions(stats);
+  renderStaffing(stats);
   renderOperators(stats.operatorRows);
   renderHeatmap(stats.heat);
 }
@@ -483,18 +586,33 @@ function renderOperators(rows) {
   `).join("");
 }
 
-function renderStaffing(hourRows) {
-  const max = Math.max(...hourRows.map((r) => r.operators), 1);
-  els.staffing.innerHTML = hourRows.map((r) => `
-    <div class="staff-row">
-      <b>${String(r.index).padStart(2, "0")}:00</b>
-      <div>
-        <div class="bar" title="${r.avgCalls.toFixed(1)} звонков/день, средний разговор ${formatDuration(r.avgTalkSec)}, пик одновременно ${r.concurrent}"><i style="width:${r.operators / max * 100}%"></i></div>
-        <small class="staff-meta">${r.avgCalls.toFixed(1)} зв./день · пик ${r.concurrent} · ожид. ${formatDuration(r.expectedWaitSec)}</small>
-      </div>
-      <span>${r.operators} опер.</span>
-    </div>
-  `).join("");
+function renderStaffingMonthOptions(stats) {
+  const current = els.staffingMonth.value || "peak";
+  const options = [`<option value="peak">Пиковый сезон</option>`].concat(
+    stats.staffing.availableMonths.map((month) => `<option value="${month}">${MONTHS[month]}</option>`)
+  );
+  els.staffingMonth.innerHTML = options.join("");
+  els.staffingMonth.value = [...els.staffingMonth.options].some((option) => option.value === current) ? current : "peak";
+}
+
+function renderStaffing(stats) {
+  const selected = els.staffingMonth.value || "peak";
+  const table = selected === "peak" ? stats.staffing.peak : stats.staffing.byMonth[+selected];
+  const maxOperators = Math.max(...stats.staffing.slots.flatMap((hour) => DOW.map((_, dow) => table[dow][hour].operators)), 1);
+  const head = `<div class="staff-cell staff-head">Время</div>${DOW.map((day) => `<div class="staff-cell staff-head">${day}</div>`).join("")}`;
+  const rows = stats.staffing.slots.map((hour) => {
+    const cells = DOW.map((_, dow) => {
+      const item = table[dow][hour];
+      const level = maxOperators ? item.operators / maxOperators : 0;
+      const monthLabel = selected === "peak" && item.month !== null ? ` · ${MONTHS[item.month]}` : "";
+      return `<div class="staff-cell staff-plan" style="--level:${level}" title="${item.avgCalls.toFixed(1)} звонков/день${monthLabel}; пик ${item.peak}; средний разговор ${formatDuration(item.avgTalkSec)}; ожидание ${formatDuration(item.expectedWaitSec)}">
+        <strong>${item.operators || ""}</strong>
+        <span>${item.avgCalls ? item.avgCalls.toFixed(1) : ""}${monthLabel}</span>
+      </div>`;
+    }).join("");
+    return `<div class="staff-cell staff-time">${formatWorkHourLabel(hour)}</div>${cells}`;
+  }).join("");
+  els.staffing.innerHTML = `<div class="staff-grid">${head}${rows}</div>`;
 }
 
 function renderHeatmap(heat) {
@@ -596,6 +714,25 @@ function isWithinWorkHours(date) {
 function parseClock(value) {
   const [h, m] = String(value || "00:00").split(":").map(Number);
   return (h || 0) * 60 + (m || 0);
+}
+
+function getWorkHourSlots() {
+  const start = parseClock(els.workStart.value || "09:30");
+  const end = parseClock(els.workEnd.value || "23:00");
+  return Array.from({ length: 24 }, (_, hour) => hour).filter((hour) => {
+    const slotStart = hour * 60;
+    const slotEnd = slotStart + 60;
+    if (start <= end) return slotEnd > start && slotStart < end;
+    return slotEnd > start || slotStart < end;
+  });
+}
+
+function formatWorkHourLabel(hour) {
+  const start = parseClock(els.workStart.value || "09:30");
+  if (Math.floor(start / 60) === hour && start % 60) {
+    return `${String(hour).padStart(2, "0")}:${String(start % 60).padStart(2, "0")}`;
+  }
+  return `${String(hour).padStart(2, "0")}:00`;
 }
 
 function hourLabels() {
