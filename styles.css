@@ -237,7 +237,9 @@ textarea {
 canvas {
   display: block;
   width: 100%;
+  max-width: 100%;
   padding: 4px 12px 14px;
+  box-sizing: border-box;
 }
 
 .table-wrap {

@@ -645,7 +645,11 @@ function renderBarChart(canvas, data, labels, metric) {
   const dpr = window.devicePixelRatio || 1;
   const rect = canvas.getBoundingClientRect();
   const width = Math.max(320, rect.width);
-  const logicalHeight = Number(canvas.getAttribute("height")) || 240;
+  if (!canvas.dataset.logicalHeight) {
+    canvas.dataset.logicalHeight = String(Number(canvas.getAttribute("height")) || 240);
+  }
+  const logicalHeight = Number(canvas.dataset.logicalHeight);
+  canvas.style.height = `${logicalHeight}px`;
   canvas.width = width * dpr;
   canvas.height = logicalHeight * dpr;
   const height = logicalHeight;
