@@ -35,6 +35,13 @@ const els = {
   monthChart: document.getElementById("monthChart"),
   staffingMonth: document.getElementById("staffingMonth"),
   staffing: document.getElementById("staffing"),
+  bonusStart: document.getElementById("bonusStart"),
+  bonusEnd: document.getElementById("bonusEnd"),
+  bonusRate: document.getElementById("bonusRate"),
+  bonusDailyFree: document.getElementById("bonusDailyFree"),
+  bonusMinSec: document.getElementById("bonusMinSec"),
+  bonusSummary: document.getElementById("bonusSummary"),
+  bonusTable: document.querySelector("#bonusTable tbody"),
   operatorSearch: document.getElementById("operatorSearch"),
   operatorTable: document.querySelector("#operatorTable tbody"),
   heatmap: document.getElementById("heatmap")
@@ -50,6 +57,9 @@ els.staffingMonth.addEventListener("change", () => lastStats && renderStaffing(l
 els.operatorSearch.addEventListener("input", () => lastStats && renderOperators(lastStats.operatorRows));
 [els.workStart, els.workEnd, els.occupancy, els.maxWait, els.buffer, els.replaceSbis, els.includeOutbound].forEach((el) => {
   el.addEventListener("change", () => lastStats && analyze());
+});
+[els.bonusStart, els.bonusEnd, els.bonusRate, els.bonusDailyFree, els.bonusMinSec].forEach((el) => {
+  el.addEventListener("change", () => lastStats && renderBonus(lastStats));
 });
 
 async function analyze() {
@@ -551,6 +561,7 @@ function render(stats) {
   renderBarChart(els.monthChart, stats.month, MONTHS, "calls");
   renderStaffingMonthOptions(stats);
   renderStaffing(stats);
+  renderBonus(stats);
   renderOperators(stats.operatorRows);
   renderHeatmap(stats.heat);
 }
@@ -595,6 +606,81 @@ function renderOperators(rows) {
       <td>${formatNumber(r.activeHours)}</td>
     </tr>
   `).join("");
+}
+
+function renderBonus(stats) {
+  ensureBonusPeriod(stats.range);
+  const result = calculateBonus(stats.rows);
+  els.bonusSummary.innerHTML = `
+    <div class="bonus-card"><span>Всего премия</span><strong>${formatMoney(result.totalBonus)}</strong></div>
+    <div class="bonus-card"><span>Звонков к премии</span><strong>${formatNumber(result.totalPaidCalls)}</strong></div>
+    <div class="bonus-card"><span>Учтено звонков</span><strong>${formatNumber(result.totalEligibleCalls)}</strong></div>
+    <div class="bonus-card"><span>Период</span><strong>${formatDateInput(els.bonusStart.value)} - ${formatDateInput(els.bonusEnd.value)}</strong></div>
+  `;
+  els.bonusTable.innerHTML = result.rows.map((r) => `
+    <tr>
+      <td>${escapeHtml(r.name)}</td>
+      <td>${formatNumber(r.days)}</td>
+      <td>${formatNumber(r.eligibleCalls)}</td>
+      <td>${formatNumber(r.bonusDays)}</td>
+      <td>${formatNumber(r.paidCalls)}</td>
+      <td>${formatMoney(r.bonus)}</td>
+      <td>${formatNumber(r.avgEligiblePerDay)}</td>
+    </tr>
+  `).join("");
+}
+
+function ensureBonusPeriod(range) {
+  if (!els.bonusStart.value && range.min) els.bonusStart.value = isoDate(range.min);
+  if (!els.bonusEnd.value && range.max) els.bonusEnd.value = isoDate(range.max);
+}
+
+function calculateBonus(rows) {
+  const start = parseDateInput(els.bonusStart.value, false);
+  const end = parseDateInput(els.bonusEnd.value, true);
+  const rate = Math.max(0, Number(els.bonusRate.value) || 6.5);
+  const dailyFree = Math.max(0, Math.floor(Number(els.bonusDailyFree.value) || 80));
+  const minSec = Math.max(0, Math.floor(Number(els.bonusMinSec.value) || 10));
+  const byOperator = new Map();
+
+  rows.forEach((r) => {
+    if (r.serviceGroup || r.employee === "СБИС без детализации") return;
+    if (r.date < start || r.date > end) return;
+    if (r.talkSec < minSec) return;
+    if (!byOperator.has(r.employee)) byOperator.set(r.employee, new Map());
+    const byDay = byOperator.get(r.employee);
+    const day = isoDate(r.date);
+    byDay.set(day, (byDay.get(day) || 0) + 1);
+  });
+
+  const resultRows = [...byOperator.entries()].map(([name, daysMap]) => {
+    let eligibleCalls = 0;
+    let bonusDays = 0;
+    let paidCalls = 0;
+    daysMap.forEach((count) => {
+      eligibleCalls += count;
+      if (count > dailyFree) {
+        bonusDays++;
+        paidCalls += count;
+      }
+    });
+    return {
+      name,
+      days: daysMap.size,
+      eligibleCalls,
+      bonusDays,
+      paidCalls,
+      bonus: paidCalls * rate,
+      avgEligiblePerDay: daysMap.size ? eligibleCalls / daysMap.size : 0
+    };
+  }).filter((r) => r.eligibleCalls > 0).sort((a, b) => b.bonus - a.bonus || b.eligibleCalls - a.eligibleCalls);
+
+  return {
+    rows: resultRows,
+    totalBonus: resultRows.reduce((sum, r) => sum + r.bonus, 0),
+    totalPaidCalls: resultRows.reduce((sum, r) => sum + r.paidCalls, 0),
+    totalEligibleCalls: resultRows.reduce((sum, r) => sum + r.eligibleCalls, 0)
+  };
 }
 
 function renderStaffingMonthOptions(stats) {
@@ -762,8 +848,24 @@ function formatDate(date) {
   return date ? date.toLocaleDateString("ru-RU") : "нет данных";
 }
 
+function parseDateInput(value, endOfDay) {
+  const parsed = parseDateTime(value);
+  if (!parsed) return endOfDay ? new Date(8640000000000000) : new Date(-8640000000000000);
+  parsed.setHours(endOfDay ? 23 : 0, endOfDay ? 59 : 0, endOfDay ? 59 : 0, endOfDay ? 999 : 0);
+  return parsed;
+}
+
+function formatDateInput(value) {
+  const parsed = parseDateTime(value);
+  return parsed ? parsed.toLocaleDateString("ru-RU") : "не задан";
+}
+
 function formatNumber(value) {
   return Math.round(value).toLocaleString("ru-RU");
+}
+
+function formatMoney(value) {
+  return `${Math.round(value).toLocaleString("ru-RU")} ₽`;
 }
 
 function formatFileSize(bytes) {

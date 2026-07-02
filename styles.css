@@ -234,6 +234,62 @@ textarea {
   padding: 14px 14px 8px;
 }
 
+.premium-controls {
+  display: flex;
+  flex-wrap: wrap;
+  justify-content: flex-end;
+  gap: 8px;
+}
+
+.premium-controls label {
+  display: grid;
+  gap: 3px;
+  color: var(--muted);
+  font-size: 12px;
+}
+
+.premium-controls input {
+  width: 118px;
+  border: 1px solid var(--line);
+  border-radius: 8px;
+  padding: 7px 8px;
+  background: #fff;
+}
+
+.premium-controls input[type="number"] {
+  width: 88px;
+}
+
+.bonus-summary {
+  display: grid;
+  grid-template-columns: repeat(auto-fit, minmax(160px, 1fr));
+  gap: 10px;
+  padding: 0 14px 12px;
+}
+
+.bonus-card {
+  border: 1px solid var(--line);
+  border-radius: 8px;
+  padding: 10px 12px;
+  background: #f8fafc;
+}
+
+.bonus-card span {
+  display: block;
+  color: var(--muted);
+  font-size: 12px;
+}
+
+.bonus-card strong {
+  display: block;
+  margin-top: 5px;
+  font-size: 20px;
+}
+
+.premium-table {
+  max-height: 460px;
+}
+
 canvas {
   display: block;
   width: 100%;

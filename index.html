@@ -113,6 +113,46 @@
 
       <section class="panel">
         <div class="section-head">
+          <h2>Премия за период</h2>
+          <div class="premium-controls">
+            <label>С
+              <input id="bonusStart" type="date">
+            </label>
+            <label>По
+              <input id="bonusEnd" type="date">
+            </label>
+            <label>₽/звонок
+              <input id="bonusRate" type="number" min="0" step="0.5" value="6.5">
+            </label>
+            <label>Порог/день
+              <input id="bonusDailyFree" type="number" min="0" step="5" value="80">
+            </label>
+            <label>Мин. сек
+              <input id="bonusMinSec" type="number" min="0" step="5" value="10">
+            </label>
+          </div>
+        </div>
+        <div id="bonusSummary" class="bonus-summary"></div>
+        <div class="table-wrap premium-table">
+          <table id="bonusTable">
+            <thead>
+              <tr>
+                <th>Оператор</th>
+                <th>Дней</th>
+                <th>Звонков ≥ 10с</th>
+                <th>Дней с премией</th>
+                <th>К премии</th>
+                <th>Премия</th>
+                <th>Средн./день</th>
+              </tr>
+            </thead>
+            <tbody></tbody>
+          </table>
+        </div>
+      </section>
+
+      <section class="panel">
+        <div class="section-head">
           <h2>Операторы</h2>
           <input id="operatorSearch" class="search" placeholder="Поиск по оператору">
         </div>
