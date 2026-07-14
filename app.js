@@ -783,101 +783,72 @@ function exportBonusPdf() {
     setNotice("Сначала загрузите файлы и посчитайте отчет.", true);
     return;
   }
-  ensureBonusPeriod(lastStats.range);
-  const result = calculateBonus(lastStats.rows);
-  const reportWindow = window.open("", "_blank");
-  if (!reportWindow) {
-    setNotice("Браузер заблокировал окно PDF. Разрешите всплывающие окна для сайта.", true);
+  if (!window.pdfMake) {
+    setNotice("Не загрузилась библиотека PDF. Обновите страницу и попробуйте снова.", true);
     return;
   }
-  reportWindow.document.open();
-  reportWindow.document.write(buildBonusPrintHtml(result));
-  reportWindow.document.close();
-  window.setTimeout(() => {
-    reportWindow.focus();
-    reportWindow.print();
-  }, 350);
+  ensureBonusPeriod(lastStats.range);
+  const result = calculateBonus(lastStats.rows);
+  const reportName = `Премия_${formatDateInput(els.bonusStart.value)}-${formatDateInput(els.bonusEnd.value)}`;
+  window.pdfMake.createPdf(buildBonusPdfDefinition(result, reportName)).download(`${reportName}.pdf`);
 }
 
-function buildBonusPrintHtml(result) {
-  const reportName = `Премия_${formatDateInput(els.bonusStart.value)}-${formatDateInput(els.bonusEnd.value)}`;
-  const rows = result.rows.map((r) => `
-    <tr>
-      <td>${escapeHtml(r.name)}</td>
-      <td>${formatNumber(r.days)}</td>
-      <td>${formatNumber(r.eligibleCalls)}</td>
-      <td>${formatNumber(r.bonusDays)}</td>
-      <td>${formatNumber(r.paidCalls)}</td>
-      <td>${formatMoney(r.bonus)}</td>
-      <td>${formatNumber(r.avgEligiblePerDay)}</td>
-    </tr>
-  `).join("");
-  return `<!doctype html>
-<html lang="ru">
-<head>
-  <meta charset="utf-8">
-  <title>${reportName}</title>
-  <style>
-    @page { size: A4 landscape; margin: 10mm; }
-    @media print {
-      @page { size: A4 landscape; margin: 10mm; }
-      html, body { width: 277mm; }
+function buildBonusPdfDefinition(result, reportName) {
+  const body = [
+    ["Оператор", "Дней", "Звонков", "Дней с премией", "К премии", "Премия", "Средн./день"],
+    ...result.rows.map((r) => [
+      r.name,
+      formatNumber(r.days),
+      formatNumber(r.eligibleCalls),
+      formatNumber(r.bonusDays),
+      formatNumber(r.paidCalls),
+      formatMoney(r.bonus),
+      formatNumber(r.avgEligiblePerDay)
+    ]),
+    ["Итого", "", formatNumber(result.totalEligibleCalls), "", formatNumber(result.totalPaidCalls), formatMoney(result.totalBonus), ""]
+  ];
+  return {
+    pageSize: "A4",
+    pageOrientation: "landscape",
+    pageMargins: [28, 24, 28, 24],
+    info: { title: reportName },
+    content: [
+      { text: reportName.replace("_", " "), style: "title" },
+      {
+        text: `Период: ${formatDateInput(els.bonusStart.value)} - ${formatDateInput(els.bonusEnd.value)}. Учитываются звонки от ${formatNumber(Number(els.bonusMinSec.value) || 10)} сек. Если за день больше ${formatNumber(Number(els.bonusDailyFree.value) || 80)} звонков, оплачиваются все звонки этого дня по ${formatMoney(Number(els.bonusRate.value) || 6.5)} за звонок.`,
+        style: "rules"
+      },
+      {
+        columns: [
+          { text: [{ text: "Всего премия\n", style: "metaLabel" }, { text: formatMoney(result.totalBonus), style: "metaValue" }] },
+          { text: [{ text: "Звонков к премии\n", style: "metaLabel" }, { text: formatNumber(result.totalPaidCalls), style: "metaValue" }] },
+          { text: [{ text: "Учтено звонков\n", style: "metaLabel" }, { text: formatNumber(result.totalEligibleCalls), style: "metaValue" }] },
+          { text: [{ text: "Дата выгрузки\n", style: "metaLabel" }, { text: new Date().toLocaleDateString("ru-RU"), style: "metaValue" }] }
+        ],
+        columnGap: 14,
+        margin: [0, 0, 0, 14]
+      },
+      {
+        table: { headerRows: 1, widths: ["*", 42, 64, 76, 64, 72, 72], body },
+        layout: {
+          fillColor: (rowIndex, node) => rowIndex === 0 ? "#eef2f7" : rowIndex === node.table.body.length - 1 ? "#f8fafc" : null,
+          hLineColor: () => "#d9e0e7",
+          vLineColor: () => "#d9e0e7",
+          paddingLeft: () => 6,
+          paddingRight: () => 6,
+          paddingTop: () => 5,
+          paddingBottom: () => 5
+        }
+      }
+    ],
+    defaultStyle: { fontSize: 9, color: "#17202a" },
+    styles: {
+      title: { fontSize: 18, bold: true, margin: [0, 0, 0, 5] },
+      rules: { fontSize: 9, color: "#657282", margin: [0, 0, 0, 14] },
+      metaLabel: { fontSize: 8, color: "#657282" },
+      metaValue: { fontSize: 14, bold: true }
     }
-    * { box-sizing: border-box; }
-    body { margin: 0; color: #17202a; font: 12px Arial, sans-serif; }
-    h1 { margin: 0 0 6px; font-size: 22px; }
-    .meta { display: grid; grid-template-columns: repeat(4, 1fr); gap: 8px; margin: 14px 0; }
-    .card { border: 1px solid #d9e0e7; border-radius: 6px; padding: 8px; }
-    .card span { display: block; color: #657282; font-size: 10px; }
-    .card strong { display: block; margin-top: 3px; font-size: 16px; }
-    .rules { margin: 8px 0 14px; color: #657282; }
-    table { width: 100%; border-collapse: collapse; }
-    th, td { border: 1px solid #d9e0e7; padding: 6px 7px; text-align: right; white-space: nowrap; }
-    th { background: #eef2f7; color: #334155; }
-    td:first-child, th:first-child { text-align: left; white-space: normal; }
-    tfoot td { font-weight: 700; background: #f8fafc; }
-  </style>
-</head>
-<body>
-  <h1>${reportName.replace("_", " ")}</h1>
-  <div class="rules">
-    Период: ${formatDateInput(els.bonusStart.value)} - ${formatDateInput(els.bonusEnd.value)}.
-    Учитываются звонки от ${formatNumber(Number(els.bonusMinSec.value) || 10)} сек.
-    Если за день больше ${formatNumber(Number(els.bonusDailyFree.value) || 80)} звонков, оплачиваются все звонки этого дня по ${formatMoney(Number(els.bonusRate.value) || 6.5)} за звонок.
-  </div>
-  <div class="meta">
-    <div class="card"><span>Всего премия</span><strong>${formatMoney(result.totalBonus)}</strong></div>
-    <div class="card"><span>Звонков к премии</span><strong>${formatNumber(result.totalPaidCalls)}</strong></div>
-    <div class="card"><span>Учтено звонков</span><strong>${formatNumber(result.totalEligibleCalls)}</strong></div>
-    <div class="card"><span>Дата выгрузки</span><strong>${new Date().toLocaleDateString("ru-RU")}</strong></div>
-  </div>
-  <table>
-    <thead>
-      <tr>
-        <th>Оператор</th>
-        <th>Дней</th>
-        <th>Звонков</th>
-        <th>Дней с премией</th>
-        <th>К премии</th>
-        <th>Премия</th>
-        <th>Средн./день</th>
-      </tr>
-    </thead>
-    <tbody>${rows}</tbody>
-    <tfoot>
-      <tr>
-        <td>Итого</td>
-        <td></td>
-        <td>${formatNumber(result.totalEligibleCalls)}</td>
-        <td></td>
-        <td>${formatNumber(result.totalPaidCalls)}</td>
-        <td>${formatMoney(result.totalBonus)}</td>
-        <td></td>
-      </tr>
-    </tfoot>
-  </table>
-</body>
-</html>`;
+  };
 }
 
 function renderStaffingMonthOptions(stats) {
