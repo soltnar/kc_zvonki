@@ -260,6 +260,7 @@ async function buildStats(rows, mainRows, sbisRows) {
   let inbound = 0;
   let outbound = 0;
   let missed = 0;
+  let missedOver10Sec = 0;
   let unresolvedSbis = 0;
   let totalTalk = 0;
   let totalWait = 0;
@@ -274,7 +275,10 @@ async function buildStats(rows, mainRows, sbisRows) {
     if (r.serviceGroup || r.employee === "СБИС без детализации") unresolvedSbis++;
     if (r.direction === "in") inbound++;
     if (r.direction === "out") outbound++;
-    if (r.missed) missed++;
+    if (r.missed) {
+      missed++;
+      if (r.waitSec > 10) missedOver10Sec++;
+    }
     totalTalk += r.talkSec;
     totalWait += r.waitSec;
     const waitGroup = r.missed ? waitStats.missed : waitStats[r.direction === "out" ? "outbound" : "inbound"];
@@ -305,6 +309,7 @@ async function buildStats(rows, mainRows, sbisRows) {
     inbound,
     outbound,
     missed,
+    missedOver10Sec,
     unresolvedSbis,
     missedRate: rows.length ? missed / rows.length : 0,
     totalTalk,
@@ -595,6 +600,7 @@ function renderKpis(stats) {
     ["Входящие", formatNumber(stats.inbound), `${percent(stats.inbound / Math.max(stats.total, 1))} от всех`],
     ["Исходящие", formatNumber(stats.outbound), `${percent(stats.outbound / Math.max(stats.total, 1))} от всех`],
     ["Пропущенные", formatNumber(stats.missed), percent(stats.missedRate)],
+    ["Пропущенные > 10 сек", formatNumber(stats.missedOver10Sec), `${percent(stats.missedOver10Sec / Math.max(stats.missed, 1))} от пропущенных`],
     ["Разговор", formatDuration(stats.totalTalk), `среднее ${formatDuration(stats.avgTalk)}`],
     ["Ожидание входящих", formatDuration(stats.waitStats.inbound.total), `среднее ${formatDuration(stats.waitStats.inbound.count ? stats.waitStats.inbound.total / stats.waitStats.inbound.count : 0)} на звонок`],
     ["Ожидание исходящих", formatDuration(stats.waitStats.outbound.total), `среднее ${formatDuration(stats.waitStats.outbound.count ? stats.waitStats.outbound.total / stats.waitStats.outbound.count : 0)} на звонок`],
