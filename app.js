@@ -725,6 +725,7 @@ function exportBonusPdf() {
 }
 
 function buildBonusPrintHtml(result) {
+  const reportName = `Премия_${formatDateInput(els.bonusStart.value)}-${formatDateInput(els.bonusEnd.value)}`;
   const rows = result.rows.map((r) => `
     <tr>
       <td>${escapeHtml(r.name)}</td>
@@ -740,9 +741,13 @@ function buildBonusPrintHtml(result) {
 <html lang="ru">
 <head>
   <meta charset="utf-8">
-  <title>Премия за период</title>
+  <title>${reportName}</title>
   <style>
-    @page { size: A4 landscape; margin: 12mm; }
+    @page { size: A4 landscape; margin: 10mm; }
+    @media print {
+      @page { size: A4 landscape; margin: 10mm; }
+      html, body { width: 277mm; }
+    }
     * { box-sizing: border-box; }
     body { margin: 0; color: #17202a; font: 12px Arial, sans-serif; }
     h1 { margin: 0 0 6px; font-size: 22px; }
@@ -759,7 +764,7 @@ function buildBonusPrintHtml(result) {
   </style>
 </head>
 <body>
-  <h1>Премия за период</h1>
+  <h1>${reportName.replace("_", " ")}</h1>
   <div class="rules">
     Период: ${formatDateInput(els.bonusStart.value)} - ${formatDateInput(els.bonusEnd.value)}.
     Учитываются звонки от ${formatNumber(Number(els.bonusMinSec.value) || 10)} сек.
