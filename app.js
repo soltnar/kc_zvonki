@@ -29,6 +29,9 @@ const els = {
   includeOutbound: document.getElementById("includeOutbound"),
   notice: document.getElementById("notice"),
   kpis: document.getElementById("kpis"),
+  missedThreshold: document.getElementById("missedThreshold"),
+  missedSummary: document.getElementById("missedSummary"),
+  missedHoursChart: document.getElementById("missedHoursChart"),
   hourMetric: document.getElementById("hourMetric"),
   hourChart: document.getElementById("hourChart"),
   dowChart: document.getElementById("dowChart"),
@@ -54,6 +57,7 @@ els.analyzeBtn.disabled = !window.XLSX;
 
 els.analyzeBtn.addEventListener("click", analyze);
 els.hourMetric.addEventListener("change", () => lastStats && render(lastStats));
+els.missedThreshold.addEventListener("change", () => lastStats && renderMissedFollowup(lastStats));
 els.staffingMonth.addEventListener("change", () => lastStats && renderStaffing(lastStats));
 els.operatorSearch.addEventListener("input", () => lastStats && renderOperators(lastStats.operatorRows));
 [els.workStart, els.workEnd, els.occupancy, els.maxWait, els.buffer, els.replaceSbis, els.includeOutbound].forEach((el) => {
@@ -260,7 +264,6 @@ async function buildStats(rows, mainRows, sbisRows) {
   let inbound = 0;
   let outbound = 0;
   let missed = 0;
-  let missedOver10Sec = 0;
   let unresolvedSbis = 0;
   let totalTalk = 0;
   let totalWait = 0;
@@ -277,7 +280,6 @@ async function buildStats(rows, mainRows, sbisRows) {
     if (r.direction === "out") outbound++;
     if (r.missed) {
       missed++;
-      if (r.waitSec > 10) missedOver10Sec++;
     }
     totalTalk += r.talkSec;
     totalWait += r.waitSec;
@@ -309,7 +311,6 @@ async function buildStats(rows, mainRows, sbisRows) {
     inbound,
     outbound,
     missed,
-    missedOver10Sec,
     unresolvedSbis,
     missedRate: rows.length ? missed / rows.length : 0,
     totalTalk,
@@ -572,6 +573,7 @@ function erlangC(traffic, agents) {
 function render(stats) {
   renderNotice(stats);
   renderKpis(stats);
+  renderMissedFollowup(stats);
   renderBarChart(els.hourChart, stats.hour, hourLabels(), els.hourMetric.value);
   renderBarChart(els.dowChart, stats.dow, DOW, "calls");
   renderBarChart(els.monthChart, stats.month, MONTHS, "calls");
@@ -600,7 +602,6 @@ function renderKpis(stats) {
     ["Входящие", formatNumber(stats.inbound), `${percent(stats.inbound / Math.max(stats.total, 1))} от всех`],
     ["Исходящие", formatNumber(stats.outbound), `${percent(stats.outbound / Math.max(stats.total, 1))} от всех`],
     ["Пропущенные", formatNumber(stats.missed), percent(stats.missedRate)],
-    ["Пропущенные > 10 сек", formatNumber(stats.missedOver10Sec), `${percent(stats.missedOver10Sec / Math.max(stats.missed, 1))} от пропущенных`],
     ["Разговор", formatDuration(stats.totalTalk), `среднее ${formatDuration(stats.avgTalk)}`],
     ["Ожидание входящих", formatDuration(stats.waitStats.inbound.total), `среднее ${formatDuration(stats.waitStats.inbound.count ? stats.waitStats.inbound.total / stats.waitStats.inbound.count : 0)} на звонок`],
     ["Ожидание исходящих", formatDuration(stats.waitStats.outbound.total), `среднее ${formatDuration(stats.waitStats.outbound.count ? stats.waitStats.outbound.total / stats.waitStats.outbound.count : 0)} на звонок`],
@@ -608,6 +609,53 @@ function renderKpis(stats) {
     ["СБИС без детализации", formatNumber(stats.unresolvedSbis), `${percent(stats.unresolvedSbis / Math.max(stats.total, 1))} строк`]
   ];
   els.kpis.innerHTML = cards.map(([label, value, sub]) => `<div class="panel kpi"><span>${label}</span><strong>${value}</strong><small>${sub}</small></div>`).join("");
+}
+
+function renderMissedFollowup(stats) {
+  const threshold = clamp(Math.round(+els.missedThreshold.value || 10), 1, 20);
+  els.missedThreshold.value = threshold;
+  const inboundMissed = stats.rows.filter((r) => r.direction === "in" && r.missed);
+  const qualified = inboundMissed.filter((r) => r.waitSec > threshold);
+  const outboundByClientDay = new Map();
+
+  stats.rows.forEach((r) => {
+    if (r.direction !== "out") return;
+    const client = normalizeClientNumber(r.client);
+    if (!client) return;
+    const key = `${isoDate(r.date)}|${client}`;
+    if (!outboundByClientDay.has(key)) outboundByClientDay.set(key, []);
+    outboundByClientDay.get(key).push(r.date.getTime());
+  });
+
+  const missedByClientDay = new Map();
+  let recognizedCalls = 0;
+  qualified.forEach((r) => {
+    const client = normalizeClientNumber(r.client);
+    if (!client) return;
+    recognizedCalls++;
+    const key = `${isoDate(r.date)}|${client}`;
+    const current = missedByClientDay.get(key);
+    if (!current || r.date > current.date) missedByClientDay.set(key, { date: r.date, client });
+  });
+
+  const unresolved = Array.from(missedByClientDay.entries()).filter(([key, item]) => {
+    return !(outboundByClientDay.get(key) || []).some((time) => time > item.date.getTime());
+  });
+  const hourly = Array.from({ length: 24 }, (_, hour) => ({ unique: 0, hour }));
+  unresolved.forEach(([, item]) => hourly[item.date.getHours()].unique++);
+
+  els.missedSummary.innerHTML = `
+    <div class="missed-card"><span>Пропущено &gt; ${threshold} сек</span><strong>${formatNumber(qualified.length)}</strong><small>${percent(qualified.length / Math.max(inboundMissed.length, 1))} от входящих пропущенных</small></div>
+    <div class="missed-card alert"><span>Уникальных без перезвона</span><strong>${formatNumber(unresolved.length)}</strong><small>до конца дня</small></div>
+    <div class="missed-card"><span>Распознано номеров</span><strong>${formatNumber(missedByClientDay.size)}</strong><small>${formatNumber(recognizedCalls)} звонков для проверки</small></div>
+  `;
+  renderBarChart(els.missedHoursChart, hourly, hourLabels(), "unique");
+}
+
+function normalizeClientNumber(value) {
+  const digits = String(value || "").replace(/\D/g, "");
+  if (digits.length < 7) return "";
+  return digits.slice(-10);
 }
 
 function renderOperators(rows) {

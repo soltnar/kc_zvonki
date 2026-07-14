@@ -219,6 +219,84 @@ textarea {
   color: var(--muted);
 }
 
+.missed-control {
+  overflow: hidden;
+}
+
+.missed-control-head p {
+  margin-top: 4px;
+  color: var(--muted);
+  font-size: 12px;
+}
+
+.missed-control-head > label {
+  display: grid;
+  gap: 4px;
+  color: var(--muted);
+  font-size: 12px;
+}
+
+.threshold-input {
+  display: grid;
+  grid-template-columns: 64px auto;
+  align-items: center;
+  gap: 7px;
+}
+
+.threshold-input input {
+  width: 64px;
+  border: 1px solid var(--line);
+  border-radius: 8px;
+  padding: 7px 8px;
+  background: #fff;
+}
+
+.threshold-input b {
+  color: var(--ink);
+}
+
+.missed-summary {
+  display: grid;
+  grid-template-columns: repeat(3, minmax(0, 1fr));
+  gap: 10px;
+  padding: 4px 14px 16px;
+}
+
+.missed-card {
+  min-height: 94px;
+  border: 1px solid var(--line);
+  border-radius: 8px;
+  padding: 12px;
+  background: #f8fafc;
+}
+
+.missed-card.alert {
+  border-left: 4px solid var(--red);
+}
+
+.missed-card span, .missed-card small {
+  display: block;
+  color: var(--muted);
+}
+
+.missed-card strong {
+  display: block;
+  margin: 7px 0;
+  font-size: 26px;
+  line-height: 1;
+}
+
+.missed-hours-head {
+  padding: 0 14px;
+  font-size: 13px;
+  font-weight: 800;
+}
+
+.missed-control canvas {
+  display: block;
+  width: 100%;
+}
+
 .grid.two {
   display: grid;
   grid-template-columns: repeat(2, minmax(0, 1fr));
@@ -480,4 +558,5 @@ th {
   .section-head { align-items: stretch; flex-direction: column; }
   .premium-controls { grid-template-columns: repeat(2, minmax(0, 1fr)); }
   .premium-controls .secondary { grid-column: 1 / -1; }
+  .missed-summary { grid-template-columns: 1fr; }
 }

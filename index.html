@@ -4,7 +4,7 @@
   <meta charset="utf-8">
   <meta name="viewport" content="width=device-width, initial-scale=1">
   <title>КЦ звонки - аналитика нагрузки</title>
-  <link rel="stylesheet" href="styles.css?v=2.8.3">
+  <link rel="stylesheet" href="styles.css?v=2.9.0">
   <script src="https://cdn.jsdelivr.net/npm/xlsx@0.18.5/dist/xlsx.full.min.js"></script>
 </head>
 <body>
@@ -70,6 +70,21 @@
       <div id="notice" class="notice">Загрузите Excel-файлы и нажмите “Посчитать”.</div>
 
       <section class="kpis" id="kpis"></section>
+
+      <section class="panel missed-control">
+        <div class="section-head missed-control-head">
+          <div>
+            <h2>Контроль пропущенных</h2>
+            <p>Звонки без обратного исходящего до конца дня</p>
+          </div>
+          <label>Ожидание больше
+            <span class="threshold-input"><input id="missedThreshold" type="number" min="1" max="20" step="1" value="10"><b>сек</b></span>
+          </label>
+        </div>
+        <div id="missedSummary" class="missed-summary"></div>
+        <div class="missed-hours-head">Уникальные без перезвона по часам</div>
+        <canvas id="missedHoursChart" height="220"></canvas>
+      </section>
 
       <section class="grid two">
         <div class="panel">
@@ -186,6 +201,6 @@
     </section>
   </main>
 
-  <script src="app.js?v=2.8.3"></script>
+  <script src="app.js?v=2.9.0"></script>
 </body>
 </html>
