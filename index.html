@@ -4,7 +4,7 @@
   <meta charset="utf-8">
   <meta name="viewport" content="width=device-width, initial-scale=1">
   <title>КЦ звонки - аналитика нагрузки</title>
-  <link rel="stylesheet" href="styles.css">
+  <link rel="stylesheet" href="styles.css?v=2.8.0">
   <script src="https://cdn.jsdelivr.net/npm/xlsx@0.18.5/dist/xlsx.full.min.js"></script>
 </head>
 <body>
@@ -112,7 +112,7 @@
       </section>
 
       <section class="panel">
-        <div class="section-head">
+        <div class="section-head premium-head">
           <h2>Премия за период</h2>
           <div class="premium-controls">
             <label>С
@@ -130,7 +130,7 @@
             <label>Мин. сек
               <input id="bonusMinSec" type="number" min="0" step="5" value="10">
             </label>
-            <button id="bonusPdfBtn" class="secondary" type="button">PDF</button>
+            <button id="bonusPdfBtn" class="secondary" type="button">Сохранить PDF</button>
           </div>
         </div>
         <div id="bonusSummary" class="bonus-summary"></div>
@@ -186,6 +186,6 @@
     </section>
   </main>
 
-  <script src="app.js"></script>
+  <script src="app.js?v=2.8.0"></script>
 </body>
 </html>

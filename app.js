@@ -712,10 +712,10 @@ function exportBonusPdf() {
   reportWindow.document.open();
   reportWindow.document.write(buildBonusPrintHtml(result));
   reportWindow.document.close();
-  reportWindow.addEventListener("load", () => {
+  window.setTimeout(() => {
     reportWindow.focus();
     reportWindow.print();
-  });
+  }, 350);
 }
 
 function buildBonusPrintHtml(result) {

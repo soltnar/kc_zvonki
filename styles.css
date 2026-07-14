@@ -235,10 +235,17 @@ textarea {
 }
 
 .premium-controls {
-  display: flex;
-  flex-wrap: wrap;
-  justify-content: flex-end;
+  display: grid;
+  grid-template-columns: repeat(2, minmax(142px, 1fr)) repeat(3, minmax(96px, .7fr)) minmax(142px, auto);
   gap: 8px;
+}
+
+.premium-head {
+  display: grid;
+  grid-template-columns: 1fr;
+  align-items: stretch;
+  gap: 12px;
+  padding-bottom: 12px;
 }
 
 .premium-controls label {
@@ -249,7 +256,8 @@ textarea {
 }
 
 .premium-controls input {
-  width: 118px;
+  width: 100%;
+  min-width: 0;
   border: 1px solid var(--line);
   border-radius: 8px;
   padding: 7px 8px;
@@ -257,17 +265,17 @@ textarea {
 }
 
 .premium-controls input[type="number"] {
-  width: 88px;
+  width: 100%;
 }
 
 .secondary {
   align-self: end;
-  min-height: 34px;
+  min-height: 36px;
   border: 1px solid var(--line);
   border-radius: 8px;
   padding: 7px 14px;
   background: #fff;
-  color: var(--text);
+  color: var(--ink);
   font: inherit;
   font-weight: 700;
   cursor: pointer;
@@ -461,6 +469,7 @@ th {
   .controls { position: static; }
   .kpis { grid-template-columns: repeat(2, minmax(0, 1fr)); }
   .grid.two { grid-template-columns: 1fr; }
+  .premium-controls { grid-template-columns: repeat(3, minmax(0, 1fr)); }
 }
 
 @media (max-width: 620px) {
@@ -469,4 +478,6 @@ th {
   .layout { padding: 10px; }
   .kpis { grid-template-columns: 1fr; }
   .section-head { align-items: stretch; flex-direction: column; }
+  .premium-controls { grid-template-columns: repeat(2, minmax(0, 1fr)); }
+  .premium-controls .secondary { grid-column: 1 / -1; }
 }
