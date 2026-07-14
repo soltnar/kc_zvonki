@@ -297,6 +297,44 @@ textarea {
   width: 100%;
 }
 
+.missed-details-head {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 12px;
+  padding: 4px 14px 10px;
+}
+
+.missed-details-head h3 {
+  margin: 0;
+  font-size: 14px;
+}
+
+.missed-details-head select {
+  min-width: 150px;
+}
+
+.missed-details-table {
+  max-height: 360px;
+  border-top: 1px solid var(--line);
+}
+
+.missed-details-table table {
+  min-width: 620px;
+}
+
+.missed-details-table thead {
+  position: sticky;
+  top: 0;
+  z-index: 1;
+}
+
+.empty-cell {
+  padding: 24px !important;
+  color: var(--muted);
+  text-align: center !important;
+}
+
 .grid.two {
   display: grid;
   grid-template-columns: repeat(2, minmax(0, 1fr));
@@ -559,4 +597,5 @@ th {
   .premium-controls { grid-template-columns: repeat(2, minmax(0, 1fr)); }
   .premium-controls .secondary { grid-column: 1 / -1; }
   .missed-summary { grid-template-columns: 1fr; }
+  .missed-details-head { align-items: stretch; flex-direction: column; }
 }

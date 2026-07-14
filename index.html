@@ -84,6 +84,16 @@
         <div id="missedSummary" class="missed-summary"></div>
         <div class="missed-hours-head">Уникальные без перезвона по часам</div>
         <canvas id="missedHoursChart" height="220"></canvas>
+        <div class="missed-details-head">
+          <h3>Уникальные пропущенные по дням</h3>
+          <select id="missedDateFilter"><option value="all">Все даты</option></select>
+        </div>
+        <div class="table-wrap missed-details-table">
+          <table>
+            <thead><tr><th>Дата</th><th>Время</th><th>Номер телефона</th><th>Ожидание</th></tr></thead>
+            <tbody id="missedDetails"></tbody>
+          </table>
+        </div>
       </section>
 
       <section class="grid two">
@@ -201,6 +211,6 @@
     </section>
   </main>
 
-  <script src="app.js?v=2.9.0"></script>
+  <script src="app.js?v=2.9.1"></script>
 </body>
 </html>

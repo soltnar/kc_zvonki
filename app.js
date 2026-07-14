@@ -32,6 +32,8 @@ const els = {
   missedThreshold: document.getElementById("missedThreshold"),
   missedSummary: document.getElementById("missedSummary"),
   missedHoursChart: document.getElementById("missedHoursChart"),
+  missedDateFilter: document.getElementById("missedDateFilter"),
+  missedDetails: document.getElementById("missedDetails"),
   hourMetric: document.getElementById("hourMetric"),
   hourChart: document.getElementById("hourChart"),
   dowChart: document.getElementById("dowChart"),
@@ -58,6 +60,7 @@ els.analyzeBtn.disabled = !window.XLSX;
 els.analyzeBtn.addEventListener("click", analyze);
 els.hourMetric.addEventListener("change", () => lastStats && render(lastStats));
 els.missedThreshold.addEventListener("change", () => lastStats && renderMissedFollowup(lastStats));
+els.missedDateFilter.addEventListener("change", () => lastStats && renderMissedFollowup(lastStats));
 els.staffingMonth.addEventListener("change", () => lastStats && renderStaffing(lastStats));
 els.operatorSearch.addEventListener("input", () => lastStats && renderOperators(lastStats.operatorRows));
 [els.workStart, els.workEnd, els.occupancy, els.maxWait, els.buffer, els.replaceSbis, els.includeOutbound].forEach((el) => {
@@ -635,7 +638,7 @@ function renderMissedFollowup(stats) {
     recognizedCalls++;
     const key = `${isoDate(r.date)}|${client}`;
     const current = missedByClientDay.get(key);
-    if (!current || r.date > current.date) missedByClientDay.set(key, { date: r.date, client });
+    if (!current || r.date > current.date) missedByClientDay.set(key, { date: r.date, client, waitSec: r.waitSec });
   });
 
   const unresolved = Array.from(missedByClientDay.entries()).filter(([key, item]) => {
@@ -650,12 +653,32 @@ function renderMissedFollowup(stats) {
     <div class="missed-card"><span>Распознано номеров</span><strong>${formatNumber(missedByClientDay.size)}</strong><small>${formatNumber(recognizedCalls)} звонков для проверки</small></div>
   `;
   renderBarChart(els.missedHoursChart, hourly, hourLabels(), "unique");
+
+  const unresolvedItems = unresolved.map(([, item]) => item).sort((a, b) => b.date - a.date);
+  const dates = Array.from(new Set(unresolvedItems.map((item) => isoDate(item.date)))).sort().reverse();
+  const selectedDate = dates.includes(els.missedDateFilter.value) ? els.missedDateFilter.value : "all";
+  els.missedDateFilter.innerHTML = `<option value="all">Все даты</option>${dates.map((date) => `<option value="${date}">${formatDate(parseDateInput(date, false))}</option>`).join("")}`;
+  els.missedDateFilter.value = selectedDate;
+  const visibleItems = selectedDate === "all" ? unresolvedItems : unresolvedItems.filter((item) => isoDate(item.date) === selectedDate);
+  els.missedDetails.innerHTML = visibleItems.length ? visibleItems.map((item) => `
+    <tr>
+      <td>${formatDate(item.date)}</td>
+      <td>${formatTime(item.date)}</td>
+      <td>${formatClientNumber(item.client)}</td>
+      <td>${formatDuration(item.waitSec)}</td>
+    </tr>
+  `).join("") : `<tr><td colspan="4" class="empty-cell">Нет уникальных пропущенных для выбранной даты</td></tr>`;
 }
 
 function normalizeClientNumber(value) {
   const digits = String(value || "").replace(/\D/g, "");
   if (digits.length < 7) return "";
   return digits.slice(-10);
+}
+
+function formatClientNumber(value) {
+  if (value.length !== 10) return escapeHtml(value);
+  return `+7 (${value.slice(0, 3)}) ${value.slice(3, 6)}-${value.slice(6, 8)}-${value.slice(8)}`;
 }
 
 function renderOperators(rows) {
@@ -1016,6 +1039,10 @@ function isoDate(date) {
 
 function formatDate(date) {
   return date ? date.toLocaleDateString("ru-RU") : "нет данных";
+}
+
+function formatTime(date) {
+  return date.toLocaleTimeString("ru-RU", { hour: "2-digit", minute: "2-digit", second: "2-digit" });
 }
 
 function parseDateInput(value, endOfDay) {
