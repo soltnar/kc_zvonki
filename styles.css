@@ -287,7 +287,7 @@ textarea {
 }
 
 .missed-hours-head {
-  padding: 0 14px;
+  padding: 12px 14px 0;
   font-size: 13px;
   font-weight: 800;
 }
@@ -295,6 +295,23 @@ textarea {
 .missed-control canvas {
   display: block;
   width: 100%;
+}
+
+.missed-breakdown {
+  border-top: 1px solid var(--line);
+}
+
+.missed-breakdown > summary {
+  padding: 12px 14px;
+  color: var(--blue);
+  font-size: 13px;
+  font-weight: 800;
+  cursor: pointer;
+  user-select: none;
+}
+
+.missed-breakdown[open] > summary {
+  border-bottom: 1px solid var(--line);
 }
 
 .missed-details-head {

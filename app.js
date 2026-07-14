@@ -31,6 +31,7 @@ const els = {
   kpis: document.getElementById("kpis"),
   missedThreshold: document.getElementById("missedThreshold"),
   missedSummary: document.getElementById("missedSummary"),
+  missedBreakdown: document.getElementById("missedBreakdown"),
   missedHoursChart: document.getElementById("missedHoursChart"),
   missedDateFilter: document.getElementById("missedDateFilter"),
   missedDetails: document.getElementById("missedDetails"),
@@ -61,6 +62,9 @@ els.analyzeBtn.addEventListener("click", analyze);
 els.hourMetric.addEventListener("change", () => lastStats && render(lastStats));
 els.missedThreshold.addEventListener("change", () => lastStats && renderMissedFollowup(lastStats));
 els.missedDateFilter.addEventListener("change", () => lastStats && renderMissedFollowup(lastStats));
+els.missedBreakdown.addEventListener("toggle", () => {
+  if (lastStats && els.missedBreakdown.open) renderMissedFollowup(lastStats);
+});
 els.staffingMonth.addEventListener("change", () => lastStats && renderStaffing(lastStats));
 els.operatorSearch.addEventListener("input", () => lastStats && renderOperators(lastStats.operatorRows));
 [els.workStart, els.workEnd, els.occupancy, els.maxWait, els.buffer, els.replaceSbis, els.includeOutbound].forEach((el) => {
