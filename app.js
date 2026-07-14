@@ -40,6 +40,7 @@ const els = {
   bonusRate: document.getElementById("bonusRate"),
   bonusDailyFree: document.getElementById("bonusDailyFree"),
   bonusMinSec: document.getElementById("bonusMinSec"),
+  bonusPdfBtn: document.getElementById("bonusPdfBtn"),
   bonusSummary: document.getElementById("bonusSummary"),
   bonusTable: document.querySelector("#bonusTable tbody"),
   operatorSearch: document.getElementById("operatorSearch"),
@@ -61,6 +62,7 @@ els.operatorSearch.addEventListener("input", () => lastStats && renderOperators(
 [els.bonusStart, els.bonusEnd, els.bonusRate, els.bonusDailyFree, els.bonusMinSec].forEach((el) => {
   el.addEventListener("change", () => lastStats && renderBonus(lastStats));
 });
+els.bonusPdfBtn.addEventListener("click", exportBonusPdf);
 
 async function analyze() {
   if (!els.mainFile.files[0]) {
@@ -261,6 +263,11 @@ async function buildStats(rows, mainRows, sbisRows) {
   let unresolvedSbis = 0;
   let totalTalk = 0;
   let totalWait = 0;
+  const waitStats = {
+    inbound: { total: 0, count: 0 },
+    outbound: { total: 0, count: 0 },
+    missed: { total: 0, count: 0 }
+  };
 
   rows.forEach((r) => {
     activeDates.add(isoDate(r.date));
@@ -270,6 +277,9 @@ async function buildStats(rows, mainRows, sbisRows) {
     if (r.missed) missed++;
     totalTalk += r.talkSec;
     totalWait += r.waitSec;
+    const waitGroup = r.missed ? waitStats.missed : waitStats[r.direction === "out" ? "outbound" : "inbound"];
+    waitGroup.total += r.waitSec;
+    waitGroup.count++;
     if ((r.direction === "in" || els.includeOutbound.checked) && isWithinWorkHours(r.date)) workloadRows.push(r);
   });
 
@@ -299,6 +309,7 @@ async function buildStats(rows, mainRows, sbisRows) {
     missedRate: rows.length ? missed / rows.length : 0,
     totalTalk,
     totalWait,
+    waitStats,
     avgTalk: rows.length ? totalTalk / rows.length : 0,
     operatorRows: operators,
     hour,
@@ -585,6 +596,9 @@ function renderKpis(stats) {
     ["Исходящие", formatNumber(stats.outbound), `${percent(stats.outbound / Math.max(stats.total, 1))} от всех`],
     ["Пропущенные", formatNumber(stats.missed), percent(stats.missedRate)],
     ["Разговор", formatDuration(stats.totalTalk), `среднее ${formatDuration(stats.avgTalk)}`],
+    ["Ожидание входящих", formatDuration(stats.waitStats.inbound.total), `среднее ${formatDuration(stats.waitStats.inbound.count ? stats.waitStats.inbound.total / stats.waitStats.inbound.count : 0)} на звонок`],
+    ["Ожидание исходящих", formatDuration(stats.waitStats.outbound.total), `среднее ${formatDuration(stats.waitStats.outbound.count ? stats.waitStats.outbound.total / stats.waitStats.outbound.count : 0)} на звонок`],
+    ["Ожидание пропущенных", formatDuration(stats.waitStats.missed.total), `среднее ${formatDuration(stats.waitStats.missed.count ? stats.waitStats.missed.total / stats.waitStats.missed.count : 0)} на звонок`],
     ["СБИС без детализации", formatNumber(stats.unresolvedSbis), `${percent(stats.unresolvedSbis / Math.max(stats.total, 1))} строк`]
   ];
   els.kpis.innerHTML = cards.map(([label, value, sub]) => `<div class="panel kpi"><span>${label}</span><strong>${value}</strong><small>${sub}</small></div>`).join("");
@@ -681,6 +695,103 @@ function calculateBonus(rows) {
     totalPaidCalls: resultRows.reduce((sum, r) => sum + r.paidCalls, 0),
     totalEligibleCalls: resultRows.reduce((sum, r) => sum + r.eligibleCalls, 0)
   };
+}
+
+function exportBonusPdf() {
+  if (!lastStats) {
+    setNotice("Сначала загрузите файлы и посчитайте отчет.", true);
+    return;
+  }
+  ensureBonusPeriod(lastStats.range);
+  const result = calculateBonus(lastStats.rows);
+  const reportWindow = window.open("", "_blank");
+  if (!reportWindow) {
+    setNotice("Браузер заблокировал окно PDF. Разрешите всплывающие окна для сайта.", true);
+    return;
+  }
+  reportWindow.document.open();
+  reportWindow.document.write(buildBonusPrintHtml(result));
+  reportWindow.document.close();
+  reportWindow.addEventListener("load", () => {
+    reportWindow.focus();
+    reportWindow.print();
+  });
+}
+
+function buildBonusPrintHtml(result) {
+  const rows = result.rows.map((r) => `
+    <tr>
+      <td>${escapeHtml(r.name)}</td>
+      <td>${formatNumber(r.days)}</td>
+      <td>${formatNumber(r.eligibleCalls)}</td>
+      <td>${formatNumber(r.bonusDays)}</td>
+      <td>${formatNumber(r.paidCalls)}</td>
+      <td>${formatMoney(r.bonus)}</td>
+      <td>${formatNumber(r.avgEligiblePerDay)}</td>
+    </tr>
+  `).join("");
+  return `<!doctype html>
+<html lang="ru">
+<head>
+  <meta charset="utf-8">
+  <title>Премия за период</title>
+  <style>
+    @page { size: A4 landscape; margin: 12mm; }
+    * { box-sizing: border-box; }
+    body { margin: 0; color: #17202a; font: 12px Arial, sans-serif; }
+    h1 { margin: 0 0 6px; font-size: 22px; }
+    .meta { display: grid; grid-template-columns: repeat(4, 1fr); gap: 8px; margin: 14px 0; }
+    .card { border: 1px solid #d9e0e7; border-radius: 6px; padding: 8px; }
+    .card span { display: block; color: #657282; font-size: 10px; }
+    .card strong { display: block; margin-top: 3px; font-size: 16px; }
+    .rules { margin: 8px 0 14px; color: #657282; }
+    table { width: 100%; border-collapse: collapse; }
+    th, td { border: 1px solid #d9e0e7; padding: 6px 7px; text-align: right; white-space: nowrap; }
+    th { background: #eef2f7; color: #334155; }
+    td:first-child, th:first-child { text-align: left; white-space: normal; }
+    tfoot td { font-weight: 700; background: #f8fafc; }
+  </style>
+</head>
+<body>
+  <h1>Премия за период</h1>
+  <div class="rules">
+    Период: ${formatDateInput(els.bonusStart.value)} - ${formatDateInput(els.bonusEnd.value)}.
+    Учитываются звонки от ${formatNumber(Number(els.bonusMinSec.value) || 10)} сек.
+    Если за день больше ${formatNumber(Number(els.bonusDailyFree.value) || 80)} звонков, оплачиваются все звонки этого дня по ${formatMoney(Number(els.bonusRate.value) || 6.5)} за звонок.
+  </div>
+  <div class="meta">
+    <div class="card"><span>Всего премия</span><strong>${formatMoney(result.totalBonus)}</strong></div>
+    <div class="card"><span>Звонков к премии</span><strong>${formatNumber(result.totalPaidCalls)}</strong></div>
+    <div class="card"><span>Учтено звонков</span><strong>${formatNumber(result.totalEligibleCalls)}</strong></div>
+    <div class="card"><span>Дата выгрузки</span><strong>${new Date().toLocaleDateString("ru-RU")}</strong></div>
+  </div>
+  <table>
+    <thead>
+      <tr>
+        <th>Оператор</th>
+        <th>Дней</th>
+        <th>Звонков</th>
+        <th>Дней с премией</th>
+        <th>К премии</th>
+        <th>Премия</th>
+        <th>Средн./день</th>
+      </tr>
+    </thead>
+    <tbody>${rows}</tbody>
+    <tfoot>
+      <tr>
+        <td>Итого</td>
+        <td></td>
+        <td>${formatNumber(result.totalEligibleCalls)}</td>
+        <td></td>
+        <td>${formatNumber(result.totalPaidCalls)}</td>
+        <td>${formatMoney(result.totalBonus)}</td>
+        <td></td>
+      </tr>
+    </tfoot>
+  </table>
+</body>
+</html>`;
 }
 
 function renderStaffingMonthOptions(stats) {

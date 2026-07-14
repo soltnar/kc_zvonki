@@ -260,6 +260,24 @@ textarea {
   width: 88px;
 }
 
+.secondary {
+  align-self: end;
+  min-height: 34px;
+  border: 1px solid var(--line);
+  border-radius: 8px;
+  padding: 7px 14px;
+  background: #fff;
+  color: var(--text);
+  font: inherit;
+  font-weight: 700;
+  cursor: pointer;
+}
+
+.secondary:hover {
+  border-color: var(--blue);
+  color: var(--blue);
+}
+
 .bonus-summary {
   display: grid;
   grid-template-columns: repeat(auto-fit, minmax(160px, 1fr));
