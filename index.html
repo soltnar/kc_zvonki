@@ -4,7 +4,7 @@
   <meta charset="utf-8">
   <meta name="viewport" content="width=device-width, initial-scale=1">
   <title>КЦ звонки - аналитика нагрузки</title>
-  <link rel="stylesheet" href="styles.css?v=2.9.2">
+  <link rel="stylesheet" href="styles.css?v=2.9.5">
   <script src="https://cdn.jsdelivr.net/npm/xlsx@0.18.5/dist/xlsx.full.min.js"></script>
   <script src="vendor/pdfmake.min.js"></script>
   <script src="vendor/vfs_fonts.js"></script>
@@ -152,13 +152,16 @@
               <input id="bonusEnd" type="date">
             </label>
             <label>₽/звонок
-              <input id="bonusRate" type="number" min="0" step="0.5" value="6.5">
+              <input id="bonusRate" type="number" min="0" step="0.5" value="7.5">
             </label>
             <label>Порог/день
               <input id="bonusDailyFree" type="number" min="0" step="5" value="80">
             </label>
             <label>Мин. сек
               <input id="bonusMinSec" type="number" min="0" step="5" value="10">
+            </label>
+            <label>НДФЛ, %
+              <input id="bonusTaxRate" type="number" min="0" max="100" step="1" value="13">
             </label>
             <button id="bonusPdfBtn" class="secondary" type="button">Сохранить PDF</button>
           </div>
@@ -174,6 +177,7 @@
                 <th>Дней с премией</th>
                 <th>К премии</th>
                 <th>Премия</th>
+                <th>На руки</th>
                 <th>Средн./день</th>
               </tr>
             </thead>
@@ -216,6 +220,6 @@
     </section>
   </main>
 
-  <script src="app.js?v=2.9.4"></script>
+  <script src="app.js?v=2.9.5"></script>
 </body>
 </html>

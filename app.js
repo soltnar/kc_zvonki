@@ -46,6 +46,7 @@ const els = {
   bonusRate: document.getElementById("bonusRate"),
   bonusDailyFree: document.getElementById("bonusDailyFree"),
   bonusMinSec: document.getElementById("bonusMinSec"),
+  bonusTaxRate: document.getElementById("bonusTaxRate"),
   bonusPdfBtn: document.getElementById("bonusPdfBtn"),
   bonusSummary: document.getElementById("bonusSummary"),
   bonusTable: document.querySelector("#bonusTable tbody"),
@@ -70,7 +71,7 @@ els.operatorSearch.addEventListener("input", () => lastStats && renderOperators(
 [els.workStart, els.workEnd, els.occupancy, els.maxWait, els.buffer, els.replaceSbis, els.includeOutbound].forEach((el) => {
   el.addEventListener("change", () => lastStats && analyze());
 });
-[els.bonusStart, els.bonusEnd, els.bonusRate, els.bonusDailyFree, els.bonusMinSec].forEach((el) => {
+[els.bonusStart, els.bonusEnd, els.bonusRate, els.bonusDailyFree, els.bonusMinSec, els.bonusTaxRate].forEach((el) => {
   el.addEventListener("change", () => lastStats && renderBonus(lastStats));
 });
 els.bonusPdfBtn.addEventListener("click", exportBonusPdf);
@@ -719,6 +720,7 @@ function renderBonus(stats) {
   const result = calculateBonus(stats.rows);
   els.bonusSummary.innerHTML = `
     <div class="bonus-card"><span>Всего премия</span><strong>${formatMoney(result.totalBonus)}</strong></div>
+    <div class="bonus-card"><span>На руки после НДФЛ</span><strong>${formatMoney(result.totalNetBonus)}</strong></div>
     <div class="bonus-card"><span>Звонков к премии</span><strong>${formatNumber(result.totalPaidCalls)}</strong></div>
     <div class="bonus-card"><span>Учтено звонков</span><strong>${formatNumber(result.totalEligibleCalls)}</strong></div>
     <div class="bonus-card"><span>Период</span><strong>${formatDateInput(els.bonusStart.value)} - ${formatDateInput(els.bonusEnd.value)}</strong></div>
@@ -731,6 +733,7 @@ function renderBonus(stats) {
       <td>${formatNumber(r.bonusDays)}</td>
       <td>${formatNumber(r.paidCalls)}</td>
       <td>${formatMoney(r.bonus)}</td>
+      <td>${formatMoney(r.netBonus)}</td>
       <td>${formatNumber(r.avgEligiblePerDay)}</td>
     </tr>
   `).join("");
@@ -744,7 +747,8 @@ function ensureBonusPeriod(range) {
 function calculateBonus(rows) {
   const start = parseDateInput(els.bonusStart.value, false);
   const end = parseDateInput(els.bonusEnd.value, true);
-  const rate = Math.max(0, Number(els.bonusRate.value) || 6.5);
+  const rate = Math.max(0, Number(els.bonusRate.value) || 7.5);
+  const taxRate = clamp(Number(els.bonusTaxRate.value) || 0, 0, 100);
   const dailyFree = Math.max(0, Math.floor(Number(els.bonusDailyFree.value) || 80));
   const minSec = Math.max(0, Math.floor(Number(els.bonusMinSec.value) || 10));
   const byOperator = new Map();
@@ -770,13 +774,16 @@ function calculateBonus(rows) {
         paidCalls += count;
       }
     });
+    const bonus = paidCalls * rate;
+    const taxAmount = Math.round(bonus * taxRate / 100);
     return {
       name,
       days: daysMap.size,
       eligibleCalls,
       bonusDays,
       paidCalls,
-      bonus: paidCalls * rate,
+      bonus,
+      netBonus: bonus - taxAmount,
       avgEligiblePerDay: daysMap.size ? eligibleCalls / daysMap.size : 0
     };
   }).filter((r) => r.eligibleCalls > 0).sort((a, b) => b.bonus - a.bonus || b.eligibleCalls - a.eligibleCalls);
@@ -784,6 +791,7 @@ function calculateBonus(rows) {
   return {
     rows: resultRows,
     totalBonus: resultRows.reduce((sum, r) => sum + r.bonus, 0),
+    totalNetBonus: resultRows.reduce((sum, r) => sum + r.netBonus, 0),
     totalPaidCalls: resultRows.reduce((sum, r) => sum + r.paidCalls, 0),
     totalEligibleCalls: resultRows.reduce((sum, r) => sum + r.eligibleCalls, 0)
   };
@@ -805,18 +813,24 @@ function exportBonusPdf() {
 }
 
 function buildBonusPdfDefinition(result, reportName) {
+  const printRows = result.rows.filter((r) => r.bonus > 0);
+  const printEligibleCalls = printRows.reduce((sum, r) => sum + r.eligibleCalls, 0);
+  const printPaidCalls = printRows.reduce((sum, r) => sum + r.paidCalls, 0);
+  const printBonus = printRows.reduce((sum, r) => sum + r.bonus, 0);
+  const printNetBonus = printRows.reduce((sum, r) => sum + r.netBonus, 0);
   const body = [
-    ["Оператор", "Дней", "Звонков", "Дней с премией", "К премии", "Премия", "Средн./день"],
-    ...result.rows.map((r) => [
+    ["Оператор", "Дней", "Звонков", "Дней с премией", "К премии", "Премия", "На руки", "Средн./день"],
+    ...printRows.map((r) => [
       r.name,
       formatNumber(r.days),
       formatNumber(r.eligibleCalls),
       formatNumber(r.bonusDays),
       formatNumber(r.paidCalls),
       formatMoney(r.bonus),
+      formatMoney(r.netBonus),
       formatNumber(r.avgEligiblePerDay)
     ]),
-    ["Итого", "", formatNumber(result.totalEligibleCalls), "", formatNumber(result.totalPaidCalls), formatMoney(result.totalBonus), ""]
+    ["Итого", "", formatNumber(printEligibleCalls), "", formatNumber(printPaidCalls), formatMoney(printBonus), formatMoney(printNetBonus), ""]
   ];
   return {
     pageSize: "A4",
@@ -826,21 +840,21 @@ function buildBonusPdfDefinition(result, reportName) {
     content: [
       { text: reportName.replace("_", " "), style: "title" },
       {
-        text: `Период: ${formatDateInput(els.bonusStart.value)} - ${formatDateInput(els.bonusEnd.value)}. Учитываются звонки от ${formatNumber(Number(els.bonusMinSec.value) || 10)} сек. Если за день больше ${formatNumber(Number(els.bonusDailyFree.value) || 80)} звонков, оплачиваются все звонки этого дня по ${formatMoney(Number(els.bonusRate.value) || 6.5)} за звонок.`,
+        text: `Период: ${formatDateInput(els.bonusStart.value)} - ${formatDateInput(els.bonusEnd.value)}. Учитываются звонки от ${formatNumber(Number(els.bonusMinSec.value) || 10)} сек. Если за день больше ${formatNumber(Number(els.bonusDailyFree.value) || 80)} звонков, оплачиваются все звонки этого дня по ${formatMoney(Number(els.bonusRate.value) || 7.5)} за звонок. На руки рассчитано после НДФЛ ${formatNumber(Number(els.bonusTaxRate.value) || 0)}%.`,
         style: "rules"
       },
       {
         columns: [
-          { text: [{ text: "Всего премия\n", style: "metaLabel" }, { text: formatMoney(result.totalBonus), style: "metaValue" }] },
-          { text: [{ text: "Звонков к премии\n", style: "metaLabel" }, { text: formatNumber(result.totalPaidCalls), style: "metaValue" }] },
-          { text: [{ text: "Учтено звонков\n", style: "metaLabel" }, { text: formatNumber(result.totalEligibleCalls), style: "metaValue" }] },
+          { text: [{ text: "Всего премия\n", style: "metaLabel" }, { text: formatMoney(printBonus), style: "metaValue" }] },
+          { text: [{ text: "На руки\n", style: "metaLabel" }, { text: formatMoney(printNetBonus), style: "metaValue" }] },
+          { text: [{ text: "Звонков к премии\n", style: "metaLabel" }, { text: formatNumber(printPaidCalls), style: "metaValue" }] },
           { text: [{ text: "Дата выгрузки\n", style: "metaLabel" }, { text: new Date().toLocaleDateString("ru-RU"), style: "metaValue" }] }
         ],
         columnGap: 14,
         margin: [0, 0, 0, 14]
       },
       {
-        table: { headerRows: 1, widths: ["*", 42, 64, 76, 64, 72, 72], body },
+        table: { headerRows: 1, widths: ["*", 36, 55, 70, 55, 62, 62, 62], body },
         layout: {
           fillColor: (rowIndex, node) => rowIndex === 0 ? "#eef2f7" : rowIndex === node.table.body.length - 1 ? "#f8fafc" : null,
           hLineColor: () => "#d9e0e7",
@@ -1048,7 +1062,11 @@ function formatNumber(value) {
 }
 
 function formatMoney(value) {
-  return `${Math.round(value).toLocaleString("ru-RU")} ₽`;
+  const amount = Number(value) || 0;
+  return `${amount.toLocaleString("ru-RU", {
+    minimumFractionDigits: Number.isInteger(amount) ? 0 : 2,
+    maximumFractionDigits: 2
+  })} ₽`;
 }
 
 function formatFileSize(bytes) {

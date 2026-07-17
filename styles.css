@@ -369,7 +369,7 @@ textarea {
 
 .premium-controls {
   display: grid;
-  grid-template-columns: repeat(2, minmax(142px, 1fr)) repeat(3, minmax(96px, .7fr)) minmax(142px, auto);
+  grid-template-columns: repeat(2, minmax(142px, 1fr)) repeat(4, minmax(90px, .7fr)) minmax(142px, auto);
   gap: 8px;
 }
 
