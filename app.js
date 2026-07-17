@@ -127,7 +127,7 @@ async function readWorkbook(file) {
   const buffer = await file.arrayBuffer();
   setNotice(`Разбираю структуру Excel “${file.name}”. Для больших файлов это может занять минуту...`);
   await nextPaint();
-  return XLSX.read(buffer, { type: "array", cellDates: true, dense: true });
+  return XLSX.read(buffer, { type: "array", cellDates: false, dense: true });
 }
 
 async function parseMainWorkbook(file, mapping) {
@@ -244,6 +244,17 @@ function parseMainDate(dateValue, timeValue) {
 
 function parseDateTime(value) {
   if (value instanceof Date && !Number.isNaN(value)) return new Date(value);
+  if (typeof value === "number" && Number.isFinite(value)) {
+    const utc = new Date(Math.round((value - 25569) * 86400000));
+    return new Date(
+      utc.getUTCFullYear(),
+      utc.getUTCMonth(),
+      utc.getUTCDate(),
+      utc.getUTCHours(),
+      utc.getUTCMinutes(),
+      utc.getUTCSeconds()
+    );
+  }
   const text = String(value || "").trim();
   if (!text) return null;
   let m = text.match(/^(\d{4})-(\d{2})-(\d{2})(?:\s+(\d{2}):(\d{2})(?::(\d{2}))?)?/);
